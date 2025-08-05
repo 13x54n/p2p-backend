@@ -52,7 +52,9 @@ POST /users/google
 ```json
 {
   "uid": "google_uid_123",
-  "email": "john@example.com"
+  "email": "john.doe@gmail.com",
+  "displayName": "John Doe",
+  "photoURL": "https://lh3.googleusercontent.com/a/ACg8ocJ..."
 }
 ```
 
@@ -66,7 +68,42 @@ POST /users/google
       "_id": "60f7b3b3b3b3b3b3b3b3b3b3",
       "uid": "google_uid_123",
       "email": "john@example.com",
+      "displayName": "John Doe",
+      "photoURL": "https://lh3.googleusercontent.com/a/ACg8ocJ...",
       "isActive": true,
+      "lastLogin": "2023-01-01T00:00:00.000Z",
+      "createdAt": "2023-01-01T00:00:00.000Z",
+      "updatedAt": "2023-01-01T00:00:00.000Z"
+    }
+  }
+}
+```
+
+#### Logout User
+```http
+POST /users/logout
+```
+
+**Request Body:**
+```json
+{
+  "uid": "google_uid_123"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "User logged out successfully",
+  "data": {
+    "user": {
+      "_id": "60f7b3b3b3b3b3b3b3b3b3b3",
+      "uid": "google_uid_123",
+      "email": "john.doe@gmail.com",
+      "displayName": "John Doe",
+      "photoURL": "https://lh3.googleusercontent.com/a/ACg8ocJ...",
+      "isActive": false,
       "lastLogin": "2023-01-01T00:00:00.000Z",
       "createdAt": "2023-01-01T00:00:00.000Z",
       "updatedAt": "2023-01-01T00:00:00.000Z"
@@ -291,6 +328,138 @@ GET /health
     "version": "1.0.0"
   }
 }
+```
+
+### Orders
+
+#### Create Buy/Sell Order
+```http
+POST /orders
+```
+
+**Request Body:**
+```json
+{
+  "uid": "CMj5c9ssZLPP8eoNfnA0GCp5n0g1",
+  "type": "buy",
+  "cryptocurrency": "USDT",
+  "amount": 100.50,
+  "price": 1.25,
+  "paymentMethods": ["Bank Transfer", "Esewa", "Khalti"],
+  "additionalInfo": "Please contact me for payment details"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "BUY order created successfully",
+  "data": {
+          "order": {
+        "_id": "60f7b3b3b3b3b3b3b3b3b3b3",
+        "uid": "CMj5c9ssZLPP8eoNfnA0GCp5n0g1",
+        "type": "buy",
+        "cryptocurrency": "USDT",
+        "amount": 100.50,
+        "price": 1.25,
+        "totalValue": 125.625,
+        "paymentMethods": ["Bank Transfer", "Esewa", "Khalti"],
+        "status": "pending",
+        "additionalInfo": "Please contact me for payment details",
+        "isActive": true,
+        "orderSummary": "BUY 100.5 USDT at 1.25",
+        "createdAt": "2023-01-01T00:00:00.000Z",
+        "updatedAt": "2023-01-01T00:00:00.000Z"
+      }
+  }
+}
+```
+
+#### Get All Orders
+```http
+GET /orders?type=buy&status=pending&page=1&limit=10
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "orders": [
+      {
+        "_id": "60f7b3b3b3b3b3b3b3b3b3b3",
+        "uid": "CMj5c9ssZLPP8eoNfnA0GCp5n0g1",
+        "type": "buy",
+        "cryptocurrency": "USDT",
+        "amount": 100.50,
+        "price": 1.25,
+        "totalValue": 125.625,
+        "paymentMethods": ["Bank Transfer", "Esewa", "Khalti"],
+        "status": "pending",
+        "additionalInfo": "Please contact me for payment details",
+        "isActive": true,
+        "orderSummary": "BUY 100.5 USDT at 1.25",
+        "createdAt": "2023-01-01T00:00:00.000Z",
+        "updatedAt": "2023-01-01T00:00:00.000Z"
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "limit": 10,
+      "total": 1,
+      "pages": 1
+    }
+  }
+}
+```
+
+#### Get Order Statistics
+```http
+GET /orders/stats
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "totalOrders": 50,
+    "buyOrders": 30,
+    "sellOrders": 20,
+    "pendingOrders": 15,
+    "activeOrders": 25,
+    "completedOrders": 10
+  }
+}
+```
+
+#### Get User Orders
+```http
+GET /orders/user/CMj5c9ssZLPP8eoNfnA0GCp5n0g1?type=buy&page=1&limit=10
+```
+
+#### Get Order by ID
+```http
+GET /orders/60f7b3b3b3b3b3b3b3b3b3b3
+```
+
+#### Update Order
+```http
+PUT /orders/60f7b3b3b3b3b3b3b3b3b3b3
+```
+
+**Request Body:**
+```json
+{
+  "status": "active",
+  "additionalInfo": "Payment received, processing order"
+}
+```
+
+#### Delete Order
+```http
+DELETE /orders/60f7b3b3b3b3b3b3b3b3b3b3
 ```
 
 ## Error Responses

@@ -1,5 +1,6 @@
 const { validationResult } = require('express-validator');
 const User = require('../models/User');
+const logger = require('../utils/logger');
 
 // @desc    Get all users
 // @route   GET /api/users
@@ -11,7 +12,6 @@ const getUsers = async (req, res) => {
     const skip = (page - 1) * limit;
 
     const users = await User.find({})
-      .select('-password')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
@@ -30,8 +30,12 @@ const getUsers = async (req, res) => {
         },
       },
     });
+
+    // Log user list retrieval
+    logger.logUserAction('get_users', 'system', { page, limit, total });
   } catch (error) {
     console.error('Get users error:', error);
+    logger.logError('users', error, req);
     res.status(500).json({
       success: false,
       message: 'Internal server error',
@@ -44,7 +48,7 @@ const getUsers = async (req, res) => {
 // @access  Public
 const getUserById = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id).select('-password');
+    const user = await User.findById(req.params.id)
 
     if (!user) {
       return res.status(404).json({
@@ -56,11 +60,15 @@ const getUserById = async (req, res) => {
     res.json({
       success: true,
       data: {
-        user: user.getPublicProfile(),
+        user: user
       },
     });
+
+    // Log user retrieval
+    logger.logUserAction('get_user_by_id', user.uid, { userId: req.params.id });
   } catch (error) {
     console.error('Get user by ID error:', error);
+    logger.logError('users', error, req);
     res.status(500).json({
       success: false,
       message: 'Internal server error',
@@ -81,7 +89,7 @@ const createOrUpdateGoogleUser = async (req, res) => {
       });
     }
 
-    const { uid, email } = req.body;
+    const { uid, email, displayName, photoURL } = req.body;
 
     // Validate required fields
     if (!uid || !email) {
@@ -95,6 +103,8 @@ const createOrUpdateGoogleUser = async (req, res) => {
     const user = await User.findOrCreateFromGoogle({
       uid,
       email,
+      displayName,
+      photoURL,
     });
 
     res.status(200).json({
@@ -104,8 +114,16 @@ const createOrUpdateGoogleUser = async (req, res) => {
         user: user.getPublicProfile(),
       },
     });
+
+    // Log user creation/update
+    logger.logUserAction(user.isNew ? 'user_created' : 'user_updated', uid, {
+      email,
+      displayName,
+      isNew: user.isNew
+    });
   } catch (error) {
     console.error('Create/Update Google user error:', error);
+    logger.logError('users', error, req);
     res.status(500).json({
       success: false,
       message: 'Internal server error',
@@ -133,8 +151,12 @@ const getUserByUid = async (req, res) => {
         user: user.getPublicProfile(),
       },
     });
+
+    // Log user retrieval by UID
+    logger.logUserAction('get_user_by_uid', req.params.uid, { uid: req.params.uid });
   } catch (error) {
     console.error('Get user by UID error:', error);
+    logger.logError('users', error, req);
     res.status(500).json({
       success: false,
       message: 'Internal server error',
@@ -177,8 +199,78 @@ const updateUser = async (req, res) => {
         user: user.getPublicProfile(),
       },
     });
+
+    // Log user update
+    logger.logUserAction('user_updated', user.uid, { 
+      userId: req.params.id,
+      updatedFields: { email }
+    });
   } catch (error) {
     console.error('Update user error:', error);
+    logger.logError('users', error, req);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+    });
+  }
+};
+
+// @desc    Logout user (set isActive to false)
+// @route   POST /api/users/logout
+// @access  Public
+const logoutUser = async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        errors: errors.array(),
+      });
+    }
+
+    const { uid } = req.body;
+
+    // Validate required fields
+    if (!uid) {
+      return res.status(400).json({
+        success: false,
+        message: 'UID is required',
+      });
+    }
+
+    // Find and update user
+    const user = await User.findOneAndUpdate(
+      { uid },
+      { 
+        isActive: false,
+        lastLogin: new Date() // Update last login time on logout
+      },
+      { new: true }
+    );
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'User logged out successfully',
+      data: {
+        user: user.getPublicProfile(),
+      },
+    });
+
+    // Log user logout
+    logger.logUserAction('user_logout', uid, { 
+      isActive: false,
+      lastLogin: user.lastLogin
+    });
+  } catch (error) {
+    console.error('Logout user error:', error);
+    logger.logError('users', error, req);
     res.status(500).json({
       success: false,
       message: 'Internal server error',
@@ -208,8 +300,15 @@ const deleteUser = async (req, res) => {
       success: true,
       message: 'User deleted successfully',
     });
+
+    // Log user deletion
+    logger.logUserAction('user_deleted', user.uid, { 
+      userId: req.params.id,
+      email: user.email
+    });
   } catch (error) {
     console.error('Delete user error:', error);
+    logger.logError('users', error, req);
     res.status(500).json({
       success: false,
       message: 'Internal server error',
@@ -260,8 +359,17 @@ const searchUsers = async (req, res) => {
         },
       },
     });
+
+    // Log user search
+    logger.logUserAction('search_users', 'system', { 
+      query: q,
+      page,
+      limit,
+      total
+    });
   } catch (error) {
     console.error('Search users error:', error);
+    logger.logError('users', error, req);
     res.status(500).json({
       success: false,
       message: 'Internal server error',
@@ -274,6 +382,7 @@ module.exports = {
   getUserById,
   getUserByUid,
   createOrUpdateGoogleUser,
+  logoutUser,
   updateUser,
   deleteUser,
   searchUsers,

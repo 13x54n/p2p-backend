@@ -9,10 +9,13 @@ require('dotenv').config();
 const connectDB = require('./config/database');
 const errorHandler = require('./middleware/errorHandler');
 const notFound = require('./middleware/notFound');
+const { requestLogger, errorLogger } = require('./middleware/logger');
 
 // Import routes
 const userRoutes = require('./routes/users');
+const orderRoutes = require('./routes/orders');
 const healthRoutes = require('./routes/health');
+const logRoutes = require('./routes/logs');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -53,6 +56,9 @@ if (process.env.NODE_ENV === 'development') {
   app.use(morgan('combined'));
 }
 
+// Custom request logging middleware
+app.use(requestLogger);
+
 // Health check endpoint
 app.get('/', (req, res) => {
   res.json({
@@ -65,10 +71,13 @@ app.get('/', (req, res) => {
 
 // API routes
 app.use('/api/users', userRoutes);
+app.use('/api/orders', orderRoutes);
 app.use('/api/health', healthRoutes);
+app.use('/api/logs', logRoutes);
 
 // Error handling middleware
 app.use(notFound);
+app.use(errorLogger);
 app.use(errorHandler);
 
 // Start server

@@ -5,6 +5,7 @@ const {
   getUserById,
   getUserByUid,
   createOrUpdateGoogleUser,
+  logoutUser,
   updateUser,
   deleteUser,
   searchUsers,
@@ -19,16 +20,30 @@ const googleUserValidation = [
     .withMessage('UID is required'),
   body('email')
     .isEmail()
-    .withMessage('Please enter a valid email')
-    .normalizeEmail(),
+    .withMessage('Please enter a valid email'),
+  body('displayName')
+    .optional()
+    .trim()
+    .isLength({ max: 100 })
+    .withMessage('Display name cannot exceed 100 characters'),
+  body('photoURL')
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage('Photo URL cannot exceed 500 characters'),
+];
+
+const logoutValidation = [
+  body('uid')
+    .notEmpty()
+    .withMessage('UID is required'),
 ];
 
 const updateUserValidation = [
   body('email')
     .optional()
     .isEmail()
-    .withMessage('Please enter a valid email')
-    .normalizeEmail(),
+    .withMessage('Please enter a valid email'),
 ];
 
 const paginationValidation = [
@@ -54,6 +69,7 @@ const searchValidation = [
 // Routes
 router.get('/', paginationValidation, getUsers);
 router.post('/google', googleUserValidation, createOrUpdateGoogleUser);
+router.post('/logout', logoutValidation, logoutUser);
 router.get('/uid/:uid', getUserByUid);
 router.get('/search', searchValidation, searchUsers);
 router.get('/:id', getUserById);

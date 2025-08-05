@@ -62,13 +62,27 @@ npm run dev
 ### Users
 - `GET /api/users` - Get all users
 - `POST /api/users/google` - Create/update user from Google Sign-In
+- `POST /api/users/logout` - Logout user (set isActive to false)
 - `GET /api/users/uid/:uid` - Get user by Google UID
 - `GET /api/users/:id` - Get user by ID
 - `PUT /api/users/:id` - Update user
 - `DELETE /api/users/:id` - Delete user
 - `GET /api/users/search` - Search users
 
+### Orders
+- `POST /api/orders` - Create a new buy/sell order
+- `GET /api/orders` - Get all orders with filters
+- `GET /api/orders/stats` - Get order statistics
+- `GET /api/orders/user/:uid` - Get user's orders by Google UID
+- `GET /api/orders/:id` - Get order by ID
+- `PUT /api/orders/:id` - Update order
+- `DELETE /api/orders/:id` - Delete order
 
+### Logs
+- `GET /api/logs` - Get logs for a specific route
+- `GET /api/logs/recent` - Get recent logs from all routes
+- `GET /api/logs/stats` - Get log statistics
+- `DELETE /api/logs/clear` - Clear old logs
 
 ### Health Check
 - `GET /api/health` - Health check endpoint
@@ -95,6 +109,32 @@ src/
 | `MONGODB_URI` | MongoDB connection string | mongodb://localhost:27017/p2p-backend |
 | `RATE_LIMIT_WINDOW_MS` | Rate limit window | 900000 |
 | `RATE_LIMIT_MAX_REQUESTS` | Max requests per window | 100 |
+| `LOG_LEVEL` | Logging level (ERROR, WARN, INFO, DEBUG) | INFO |
+
+## Logging System
+
+The application includes a comprehensive logging system that automatically logs all API requests, responses, and errors. Logs are organized by route type and stored in daily files.
+
+### Log Structure
+- **Route-specific logs**: `logs/routes/{route_type}/{date}.log`
+- **Log types**: users, orders, health, errors, access
+- **Log levels**: ERROR, WARN, INFO, DEBUG
+
+### Log Content
+Each log entry includes:
+- Timestamp
+- Log level
+- Message
+- Request details (method, URL, IP, user agent)
+- Response details (status code, response time)
+- User context (UID when available)
+- Request body (for non-GET requests)
+- Query parameters
+
+### Log Management
+- **View logs**: Use `/api/logs` endpoints
+- **Auto-cleanup**: Logs older than 30 days are automatically cleaned up
+- **Manual cleanup**: Use `DELETE /api/logs/clear?days=30`
 
 ## Contributing
 
