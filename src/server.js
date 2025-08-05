@@ -82,10 +82,11 @@ app.use(errorHandler);
 
 // Start server
 if (process.env.NODE_ENV !== 'test') {
-  app.listen(PORT, () => {
+  app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Server running on port ${PORT}`);
     console.log(`📊 Environment: ${process.env.NODE_ENV}`);
     console.log(`🔗 Health check: http://localhost:${PORT}/api/health`);
+    console.log(`🌐 Server listening on all interfaces (0.0.0.0:${PORT})`);
   });
 }
 
