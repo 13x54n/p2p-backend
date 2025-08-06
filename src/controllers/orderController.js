@@ -19,11 +19,13 @@ const createOrder = async (req, res) => {
     const { 
       uid, 
       type, 
-      cryptocurrency = 'USDT', 
+      cryptocurrency, 
       amount, 
       price, 
       paymentMethods, 
-      additionalInfo = '' 
+      additionalInfo = '',
+      minOrderLimit,
+      maxOrderLimit
     } = req.body;
 
     // Validate user exists by Google UID
@@ -38,8 +40,8 @@ const createOrder = async (req, res) => {
     // Calculate total value
     const totalValue = amount * price;
 
-    // Create order
-    const order = await Order.createOrder({
+    // Prepare order data
+    const orderData = {
       uid: user.uid,
       type,
       cryptocurrency,
@@ -48,7 +50,18 @@ const createOrder = async (req, res) => {
       totalValue,
       paymentMethods,
       additionalInfo,
-    });
+    };
+
+    // Add order limits only if provided
+    if (minOrderLimit !== undefined && minOrderLimit !== null) {
+      orderData.minOrderLimit = minOrderLimit;
+    }
+    if (maxOrderLimit !== undefined && maxOrderLimit !== null) {
+      orderData.maxOrderLimit = maxOrderLimit;
+    }
+
+    // Create order
+    const order = await Order.createOrder(orderData);
 
     res.status(201).json({
       success: true,
@@ -242,7 +255,9 @@ const updateOrder = async (req, res) => {
       price, 
       paymentMethods, 
       status, 
-      additionalInfo 
+      additionalInfo,
+      minOrderLimit,
+      maxOrderLimit
     } = req.body;
 
     const order = await Order.findById(req.params.id);
@@ -259,6 +274,10 @@ const updateOrder = async (req, res) => {
     if (paymentMethods !== undefined) order.paymentMethods = paymentMethods;
     if (status !== undefined) order.status = status;
     if (additionalInfo !== undefined) order.additionalInfo = additionalInfo;
+    
+    // Update order limits only if provided
+    if (minOrderLimit !== undefined) order.minOrderLimit = minOrderLimit;
+    if (maxOrderLimit !== undefined) order.maxOrderLimit = maxOrderLimit;
 
     await order.save();
 

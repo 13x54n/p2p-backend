@@ -45,12 +45,22 @@ const orderSchema = new mongoose.Schema({
   status: {
     type: String,
     enum: ['pending', 'active', 'completed', 'cancelled'],
-    default: 'pending',
+    default: 'active',
   },
   additionalInfo: {
     type: String,
     maxlength: [1000, 'Additional information cannot exceed 1000 characters'],
     default: '',
+  },
+  minOrderLimit: {
+    type: Number,
+    min: [0, 'Minimum order limit must be positive'],
+    default: null,
+  },
+  maxOrderLimit: {
+    type: Number,
+    min: [0, 'Maximum order limit must be positive'],
+    default: null,
   },
   isActive: {
     type: Boolean,
@@ -76,6 +86,16 @@ orderSchema.virtual('orderSummary').get(function() {
 orderSchema.pre('save', function(next) {
   if (this.isModified('amount') || this.isModified('price')) {
     this.totalValue = this.amount * this.price;
+  }
+  next();
+});
+
+// Pre-save middleware to validate order limits
+orderSchema.pre('save', function(next) {
+  if (this.minOrderLimit !== null && this.maxOrderLimit !== null) {
+    if (this.maxOrderLimit <= this.minOrderLimit) {
+      return next(new Error('Maximum order limit must be greater than minimum order limit'));
+    }
   }
   next();
 });

@@ -136,7 +136,9 @@ const createOrUpdateGoogleUser = async (req, res) => {
 // @access  Public
 const getUserByUid = async (req, res) => {
   try {
-    const user = await User.findByUid(req.params.uid);
+    const user = await User.findOne({ uid: req.params.uid });
+
+    const totalOrders = await user.getTotalOrders();
 
     if (!user) {
       return res.status(404).json({
@@ -145,11 +147,14 @@ const getUserByUid = async (req, res) => {
       });
     }
 
+    const data = {
+      ...user.getPublicProfile(),
+      totalOrders
+    }
+
     res.json({
       success: true,
-      data: {
-        user: user.getPublicProfile(),
-      },
+      data
     });
 
     // Log user retrieval by UID
@@ -201,7 +206,7 @@ const updateUser = async (req, res) => {
     });
 
     // Log user update
-    logger.logUserAction('user_updated', user.uid, { 
+    logger.logUserAction('user_updated', user.uid, {
       userId: req.params.id,
       updatedFields: { email }
     });
@@ -241,7 +246,7 @@ const logoutUser = async (req, res) => {
     // Find and update user
     const user = await User.findOneAndUpdate(
       { uid },
-      { 
+      {
         isActive: false,
         lastLogin: new Date() // Update last login time on logout
       },
@@ -264,7 +269,7 @@ const logoutUser = async (req, res) => {
     });
 
     // Log user logout
-    logger.logUserAction('user_logout', uid, { 
+    logger.logUserAction('user_logout', uid, {
       isActive: false,
       lastLogin: user.lastLogin
     });
@@ -302,7 +307,7 @@ const deleteUser = async (req, res) => {
     });
 
     // Log user deletion
-    logger.logUserAction('user_deleted', user.uid, { 
+    logger.logUserAction('user_deleted', user.uid, {
       userId: req.params.id,
       email: user.email
     });
@@ -361,7 +366,7 @@ const searchUsers = async (req, res) => {
     });
 
     // Log user search
-    logger.logUserAction('search_users', 'system', { 
+    logger.logUserAction('search_users', 'system', {
       query: q,
       page,
       limit,

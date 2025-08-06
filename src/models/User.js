@@ -45,6 +45,15 @@ userSchema.virtual('displayNameFallback').get(function() {
   return this.displayName || this.email;
 });
 
+// Virtual for total orders count
+userSchema.virtual('totalOrders', {
+  ref: 'Order',
+  localField: 'uid',
+  foreignField: 'uid',
+  count: true,
+  justOne: false
+});
+
 // Index for better query performance
 userSchema.index({ createdAt: -1 });
 
@@ -85,6 +94,12 @@ userSchema.statics.findByUid = function(uid) {
 userSchema.methods.getPublicProfile = function() {
   const userObject = this.toObject();
   return userObject;
+};
+
+// Instance method to get total orders count
+userSchema.methods.getTotalOrders = async function() {
+  const Order = mongoose.model('Order');
+  return await Order.countDocuments({ uid: this.uid });
 };
 
 module.exports = mongoose.model('User', userSchema); 
