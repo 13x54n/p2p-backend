@@ -80,8 +80,8 @@ app.use(notFound);
 app.use(errorLogger);
 app.use(errorHandler);
 
-// Start server
-if (process.env.NODE_ENV !== 'test') {
+// Start server (only for local development)
+if (process.env.NODE_ENV !== 'test' && process.env.NODE_ENV !== 'production') {
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Server running on port ${PORT}`);
     console.log(`📊 Environment: ${process.env.NODE_ENV}`);
