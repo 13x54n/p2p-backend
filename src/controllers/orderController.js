@@ -16,6 +16,8 @@ const createOrder = async (req, res) => {
       });
     }
 
+    console.log('Debug - Full request body:', req.body);
+    
     const { 
       uid, 
       type, 
@@ -24,8 +26,8 @@ const createOrder = async (req, res) => {
       price, 
       paymentMethods, 
       additionalInfo = '',
-      minOrderLimit,
-      maxOrderLimit
+      minLimit,
+      maxLimit
     } = req.body;
 
     // Validate user exists by Google UID
@@ -53,12 +55,19 @@ const createOrder = async (req, res) => {
     };
 
     // Add order limits only if provided
-    if (minOrderLimit !== undefined && minOrderLimit !== null) {
-      orderData.minOrderLimit = minOrderLimit;
+    console.log('Debug - minLimit:', minLimit, 'type:', typeof minLimit);
+    console.log('Debug - maxLimit:', maxLimit, 'type:', typeof maxLimit);
+    
+    if (minLimit !== undefined && minLimit !== null && minLimit !== '') {
+      orderData.minOrderLimit = parseFloat(minLimit);
+      console.log('Debug - Added minOrderLimit:', orderData.minOrderLimit);
     }
-    if (maxOrderLimit !== undefined && maxOrderLimit !== null) {
-      orderData.maxOrderLimit = maxOrderLimit;
+    if (maxLimit !== undefined && maxLimit !== null && maxLimit !== '') {
+      orderData.maxOrderLimit = parseFloat(maxLimit);
+      console.log('Debug - Added maxOrderLimit:', orderData.maxOrderLimit);
     }
+    
+    console.log('Debug - Final orderData:', orderData);
 
     // Create order
     const order = await Order.createOrder(orderData);
@@ -256,8 +265,8 @@ const updateOrder = async (req, res) => {
       paymentMethods, 
       status, 
       additionalInfo,
-      minOrderLimit,
-      maxOrderLimit
+      minLimit,
+      maxLimit
     } = req.body;
 
     const order = await Order.findById(req.params.id);
@@ -276,8 +285,8 @@ const updateOrder = async (req, res) => {
     if (additionalInfo !== undefined) order.additionalInfo = additionalInfo;
     
     // Update order limits only if provided
-    if (minOrderLimit !== undefined) order.minOrderLimit = minOrderLimit;
-    if (maxOrderLimit !== undefined) order.maxOrderLimit = maxOrderLimit;
+    if (minLimit !== undefined) order.minOrderLimit = parseFloat(minLimit);
+    if (maxLimit !== undefined) order.maxOrderLimit = parseFloat(maxLimit);
 
     await order.save();
 

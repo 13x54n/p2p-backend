@@ -54,12 +54,12 @@ const orderSchema = new mongoose.Schema({
   },
   minOrderLimit: {
     type: Number,
-    min: [0, 'Minimum order limit must be positive'],
+    min: [0, 'Minimum order limit must be non-negative'],
     default: null,
   },
   maxOrderLimit: {
     type: Number,
-    min: [0, 'Maximum order limit must be positive'],
+    min: [0, 'Maximum order limit must be non-negative'],
     default: null,
   },
   isActive: {
@@ -92,7 +92,9 @@ orderSchema.pre('save', function(next) {
 
 // Pre-save middleware to validate order limits
 orderSchema.pre('save', function(next) {
-  if (this.minOrderLimit !== null && this.maxOrderLimit !== null) {
+  // Only validate if both limits are provided and not null
+  if (this.minOrderLimit !== null && this.maxOrderLimit !== null && 
+      this.minOrderLimit !== undefined && this.maxOrderLimit !== undefined) {
     if (this.maxOrderLimit <= this.minOrderLimit) {
       return next(new Error('Maximum order limit must be greater than minimum order limit'));
     }

@@ -43,6 +43,14 @@ const createOrderValidation = [
     .trim()
     .isLength({ max: 1000 })
     .withMessage('Additional information cannot exceed 1000 characters'),
+  body('minLimit')
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage('Minimum limit must be a non-negative number'),
+  body('maxLimit')
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage('Maximum limit must be a non-negative number'),
 ];
 
 const updateOrderValidation = [
@@ -71,6 +79,14 @@ const updateOrderValidation = [
     .trim()
     .isLength({ max: 1000 })
     .withMessage('Additional information cannot exceed 1000 characters'),
+  body('minLimit')
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage('Minimum limit must be a non-negative number'),
+  body('maxLimit')
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage('Maximum limit must be a non-negative number'),
 ];
 
 const paginationValidation = [
