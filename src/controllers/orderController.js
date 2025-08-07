@@ -16,8 +16,6 @@ const createOrder = async (req, res) => {
       });
     }
 
-    console.log('Debug - Full request body:', req.body);
-    
     const { 
       uid, 
       type, 
@@ -55,19 +53,12 @@ const createOrder = async (req, res) => {
     };
 
     // Add order limits only if provided
-    console.log('Debug - minLimit:', minLimit, 'type:', typeof minLimit);
-    console.log('Debug - maxLimit:', maxLimit, 'type:', typeof maxLimit);
-    
     if (minLimit !== undefined && minLimit !== null && minLimit !== '') {
       orderData.minOrderLimit = parseFloat(minLimit);
-      console.log('Debug - Added minOrderLimit:', orderData.minOrderLimit);
     }
     if (maxLimit !== undefined && maxLimit !== null && maxLimit !== '') {
       orderData.maxOrderLimit = parseFloat(maxLimit);
-      console.log('Debug - Added maxOrderLimit:', orderData.maxOrderLimit);
     }
-    
-    console.log('Debug - Final orderData:', orderData);
 
     // Create order
     const order = await Order.createOrder(orderData);
