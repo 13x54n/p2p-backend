@@ -9,6 +9,11 @@ const {
   updateUser,
   deleteUser,
   searchUsers,
+  ensureUserWallet,
+  ensureAllUsersWallets,
+  createWalletForChain,
+  setDefaultChain,
+  createAllMissingWallets,
 } = require('../controllers/userController');
 
 const router = express.Router();
@@ -46,6 +51,14 @@ const updateUserValidation = [
     .withMessage('Please enter a valid email'),
 ];
 
+const defaultChainValidation = [
+  body('chain')
+    .notEmpty()
+    .withMessage('Chain is required')
+    .isIn(['ethereum', 'polygon', 'arbitrum'])
+    .withMessage('Chain must be one of: ethereum, polygon, arbitrum'),
+];
+
 const paginationValidation = [
   query('page')
     .optional()
@@ -70,7 +83,12 @@ const searchValidation = [
 router.get('/', paginationValidation, getUsers);
 router.post('/google', googleUserValidation, createOrUpdateGoogleUser);
 router.post('/logout', logoutValidation, logoutUser);
+router.post('/ensure-all-wallets', ensureAllUsersWallets);
 router.get('/uid/:uid', getUserByUid);
+router.post('/uid/:uid/ensure-wallet', ensureUserWallet);
+router.post('/uid/:uid/create-wallet/:chain', createWalletForChain);
+router.post('/uid/:uid/create-all-wallets', createAllMissingWallets);
+router.put('/uid/:uid/default-chain', defaultChainValidation, setDefaultChain);
 router.get('/search', searchValidation, searchUsers);
 router.get('/:id', getUserById);
 router.put('/:id', updateUserValidation, updateUser);

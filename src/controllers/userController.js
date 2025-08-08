@@ -1,6 +1,8 @@
 const { validationResult } = require('express-validator');
 const User = require('../models/User');
 const logger = require('../utils/logger');
+const { initiateDeveloperControlledWalletsClient } = require('@circle-fin/developer-controlled-wallets');
+
 
 // @desc    Get all users
 // @route   GET /api/users
@@ -100,12 +102,61 @@ const createOrUpdateGoogleUser = async (req, res) => {
     }
 
     // Create or update user from Google auth data
-    const user = await User.findOrCreateFromGoogle({
+    let user = await User.findOrCreateFromGoogle({
       uid,
       email,
       displayName,
       photoURL,
     });
+
+    // Check if user already has a wallet
+    if (!user.hasWallet()) {
+      try {
+        // Import & Initialize Circle client
+        const client = initiateDeveloperControlledWalletsClient({
+          apiKey: process.env.CIRCLE_API_KEY,
+          entitySecret: process.env.CIRCLE_ENTITY_SECRET
+        });
+
+        // Create wallet for the user
+        const response = await client.createWallets({
+          blockchains: ['ETH-SEPOLIA', 'MATIC-AMOY', 'ARB-SEPOLIA'], 
+          count: 1,
+          accountType: 'SCA',
+          walletSetId: 'c11abfbc-7ac5-5bc8-b1bc-b27586fd4ba7'
+        });
+
+        // Extract wallet information from response
+        // The response contains wallets for all requested blockchains
+        const blockchainMapping = {
+          'ETH-SEPOLIA': 'ethereum',
+          'MATIC-AMOY': 'polygon', 
+          'ARB-SEPOLIA': 'arbitrum'
+        };
+
+        if (response.data && response.data.wallets && response.data.wallets.length > 0) {
+          for (const wallet of response.data.wallets) {
+            const chain = blockchainMapping[wallet.blockchain];
+            if (chain) {
+              // Update user with wallet information for this chain
+              user.setWalletInfo(wallet.id, wallet.address, chain);
+              
+              logger.logUserAction('wallet_created', uid, {
+                walletId: wallet.id,
+                walletAddress: wallet.address,
+                blockchain: chain
+              });
+            }
+          }
+        }
+        
+        await user.save();
+      } catch (walletError) {
+        console.error('Wallet creation error:', walletError);
+        logger.logError('wallet_creation', walletError, req);
+        // Continue with user creation even if wallet creation fails
+      }
+    }
 
     res.status(200).json({
       success: true,
@@ -149,7 +200,14 @@ const getUserByUid = async (req, res) => {
 
     const data = {
       ...user.getPublicProfile(),
-      totalOrders
+      totalOrders,
+      hasWallet: user.hasAnyWallet(),
+      defaultChain: user.defaultChain,
+      wallets: user.getAllWalletInfo(),
+      walletSummary: user.getWalletSummary(),
+      walletCount: user.getWalletCount(),
+      hasAllWallets: user.hasAllWallets(),
+      missingWallets: user.getMissingWallets()
     }
 
     res.json({
@@ -321,6 +379,459 @@ const deleteUser = async (req, res) => {
   }
 };
 
+// @desc    Ensure all users have wallets (create missing ones)
+// @route   POST /api/users/ensure-all-wallets
+// @access  Public
+const ensureAllUsersWallets = async (req, res) => {
+  try {
+    // Find all users without wallets
+    const usersWithoutWallets = await User.find({
+      $or: [
+        { 'wallet.ethereum.walletId': { $exists: false } },
+        { 'wallet.ethereum.walletId': null },
+        { 'wallet.ethereum.walletAddress': { $exists: false } },
+        { 'wallet.ethereum.walletAddress': null }
+      ]
+    });
+
+    if (usersWithoutWallets.length === 0) {
+      return res.json({
+        success: true,
+        message: 'All users already have wallets',
+        data: {
+          processed: 0,
+          created: 0,
+          failed: 0
+        }
+      });
+    }
+
+    const client = initiateDeveloperControlledWalletsClient({
+      apiKey: process.env.CIRCLE_API_KEY,
+      entitySecret: process.env.CIRCLE_ENTITY_SECRET
+    });
+
+    let created = 0;
+    let failed = 0;
+
+    // Process users in batches to avoid overwhelming the API
+    for (const user of usersWithoutWallets) {
+      try {
+        const response = await client.createWallets({
+          blockchains: ['ETH-SEPOLIA'], // this could be solana, polygon, arbitrum, etc.
+          count: 1,
+          accountType: 'SCA',
+          walletSetId: 'c11abfbc-7ac5-5bc8-b1bc-b27586fd4ba7'
+        });
+
+        if (response.data && response.data.wallets && response.data.wallets.length > 0) {
+          const wallet = response.data.wallets[0];
+          
+          user.setWalletInfo(wallet.id, wallet.address);
+          await user.save();
+
+          created++;
+          logger.logUserAction('wallet_created_bulk', user.uid, {
+            walletId: wallet.id,
+            walletAddress: wallet.address
+          });
+        } else {
+          failed++;
+          logger.logError('wallet_creation_bulk', new Error('No wallet data received'), { uid: user.uid });
+        }
+      } catch (error) {
+        failed++;
+        logger.logError('wallet_creation_bulk', error, { uid: user.uid });
+      }
+
+      // Add a small delay between requests to be respectful to the API
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    res.json({
+      success: true,
+      message: `Processed ${usersWithoutWallets.length} users`,
+      data: {
+        processed: usersWithoutWallets.length,
+        created,
+        failed
+      }
+    });
+
+  } catch (error) {
+    console.error('Ensure all users wallets error:', error);
+    logger.logError('users', error, req);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+    });
+  }
+};
+
+// @desc    Create wallet for specific chain
+// @route   POST /api/users/:uid/create-wallet/:chain
+// @access  Public
+const createWalletForChain = async (req, res) => {
+  try {
+    const { uid, chain } = req.params;
+    const supportedChains = ['ethereum', 'polygon', 'arbitrum'];
+    
+    if (!supportedChains.includes(chain)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Unsupported blockchain. Supported chains: ethereum, polygon, arbitrum',
+      });
+    }
+
+    // Find user by UID
+    const user = await User.findOne({ uid });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    // Check if user already has a wallet for this chain
+    if (user.hasWallet(chain)) {
+      const walletInfo = user.getWalletInfo(chain);
+      return res.json({
+        success: true,
+        message: `User already has a ${chain} wallet`,
+        data: {
+          walletId: walletInfo.walletId,
+          walletAddress: walletInfo.walletAddress,
+          blockchain: chain
+        },
+      });
+    }
+
+    // Map chain names to Circle blockchain identifiers
+    const chainMapping = {
+      'ethereum': 'ETH-SEPOLIA',
+      'polygon': 'MATIC-AMOY',
+      'arbitrum': 'ARB-SEPOLIA'
+    };
+
+    // Create wallet for the user
+    try {
+      const client = initiateDeveloperControlledWalletsClient({
+        apiKey: process.env.CIRCLE_API_KEY,
+        entitySecret: process.env.CIRCLE_ENTITY_SECRET
+      });
+
+      const response = await client.createWallets({
+        blockchains: [chainMapping[chain]],
+        count: 1,
+        accountType: 'SCA',
+        walletSetId: 'c11abfbc-7ac5-5bc8-b1bc-b27586fd4ba7'
+      });
+
+      // Extract wallet information from response
+      if (response.data && response.data.wallets && response.data.wallets.length > 0) {
+        const wallet = response.data.wallets[0];
+        
+        // Update user with wallet information
+        user.setWalletInfo(wallet.id, wallet.address, chain);
+        await user.save();
+
+        logger.logUserAction('wallet_created_for_chain', uid, {
+          walletId: wallet.id,
+          walletAddress: wallet.address,
+          blockchain: chain
+        });
+
+        res.json({
+          success: true,
+          message: `${chain} wallet created successfully`,
+          data: {
+            walletId: wallet.id,
+            walletAddress: wallet.address,
+            blockchain: chain
+          },
+        });
+      } else {
+        throw new Error('No wallet data received from Circle API');
+      }
+    } catch (walletError) {
+      console.error('Wallet creation error:', walletError);
+      logger.logError('wallet_creation', walletError, req);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to create wallet',
+        error: walletError.message,
+      });
+    }
+  } catch (error) {
+    console.error('Create wallet for chain error:', error);
+    logger.logError('users', error, req);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+    });
+  }
+};
+
+// @desc    Ensure user has wallet (create if missing)
+// @route   POST /api/users/:uid/ensure-wallet
+// @access  Public
+const ensureUserWallet = async (req, res) => {
+  try {
+    const { uid } = req.params;
+
+    // Find user by UID
+    const user = await User.findOne({ uid });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    // Check if user already has a wallet
+    if (user.hasWallet()) {
+      const walletInfo = user.getWalletInfo();
+      return res.json({
+        success: true,
+        message: 'User already has a wallet',
+        data: {
+          walletId: walletInfo.walletId,
+          walletAddress: walletInfo.walletAddress,
+        },
+      });
+    }
+
+    // Create wallet for the user
+    try {
+      const client = initiateDeveloperControlledWalletsClient({
+        apiKey: process.env.CIRCLE_API_KEY,
+        entitySecret: process.env.CIRCLE_ENTITY_SECRET
+      });
+
+      const response = await client.createWallets({
+        blockchains: ['ETH-SEPOLIA'], // this could be solana, polygon, arbitrum, etc.
+        count: 1,
+        accountType: 'SCA',
+        walletSetId: 'c11abfbc-7ac5-5bc8-b1bc-b27586fd4ba7'
+      });
+
+      // Extract wallet information from response
+      if (response.data && response.data.wallets && response.data.wallets.length > 0) {
+        const wallet = response.data.wallets[0];
+        
+        // Update user with wallet information
+        user.setWalletInfo(wallet.id, wallet.address);
+        await user.save();
+
+        logger.logUserAction('wallet_created', uid, {
+          walletId: wallet.id,
+          walletAddress: wallet.address
+        });
+
+        res.json({
+          success: true,
+          message: 'Wallet created successfully',
+          data: {
+            walletId: wallet.id,
+            walletAddress: wallet.address,
+          },
+        });
+      } else {
+        throw new Error('No wallet data received from Circle API');
+      }
+    } catch (walletError) {
+      console.error('Wallet creation error:', walletError);
+      logger.logError('wallet_creation', walletError, req);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to create wallet',
+        error: walletError.message,
+      });
+    }
+  } catch (error) {
+    console.error('Ensure user wallet error:', error);
+    logger.logError('users', error, req);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+    });
+  }
+};
+
+// @desc    Create all missing wallets for user
+// @route   POST /api/users/:uid/create-all-wallets
+// @access  Public
+const createAllMissingWallets = async (req, res) => {
+  try {
+    const { uid } = req.params;
+
+    // Find user by UID
+    const user = await User.findOne({ uid });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    // Check if user already has all wallets
+    if (user.hasAllWallets()) {
+      return res.json({
+        success: true,
+        message: 'User already has all wallets',
+        data: {
+          walletSummary: user.getWalletSummary(),
+          wallets: user.getAllWalletInfo()
+        },
+      });
+    }
+
+    const missingChains = user.getMissingWallets();
+    
+    // Map chain names to Circle blockchain identifiers
+    const chainMapping = {
+      'ethereum': 'ETH-SEPOLIA',
+      'polygon': 'MATIC-AMOY',
+      'arbitrum': 'ARB-SEPOLIA'
+    };
+
+    const client = initiateDeveloperControlledWalletsClient({
+      apiKey: process.env.CIRCLE_API_KEY,
+      entitySecret: process.env.CIRCLE_ENTITY_SECRET
+    });
+
+    let created = 0;
+    let failed = 0;
+    const results = [];
+
+    // Create wallets for missing chains
+    for (const chain of missingChains) {
+      try {
+        const response = await client.createWallets({
+          blockchains: [chainMapping[chain]],
+          count: 1,
+          accountType: 'SCA',
+          walletSetId: 'c11abfbc-7ac5-5bc8-b1bc-b27586fd4ba7'
+        });
+
+        if (response.data && response.data.wallets && response.data.wallets.length > 0) {
+          const wallet = response.data.wallets[0];
+          
+          // Update user with wallet information
+          user.setWalletInfo(wallet.id, wallet.address, chain);
+          
+          created++;
+          results.push({
+            chain,
+            status: 'success',
+            walletId: wallet.id,
+            walletAddress: wallet.address
+          });
+
+          logger.logUserAction('wallet_created_bulk', uid, {
+            walletId: wallet.id,
+            walletAddress: wallet.address,
+            blockchain: chain
+          });
+        } else {
+          failed++;
+          results.push({
+            chain,
+            status: 'error',
+            message: 'No wallet data received'
+          });
+        }
+      } catch (error) {
+        failed++;
+        results.push({
+          chain,
+          status: 'error',
+          message: error.message
+        });
+        logger.logError('wallet_creation_bulk', error, { uid, chain });
+      }
+
+      // Add a small delay between requests
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    await user.save();
+
+    res.json({
+      success: true,
+      message: `Created ${created} wallets, ${failed} failed`,
+      data: {
+        created,
+        failed,
+        results,
+        walletSummary: user.getWalletSummary(),
+        wallets: user.getAllWalletInfo()
+      },
+    });
+
+  } catch (error) {
+    console.error('Create all missing wallets error:', error);
+    logger.logError('users', error, req);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+    });
+  }
+};
+
+// @desc    Set default chain for user
+// @route   PUT /api/users/:uid/default-chain
+// @access  Public
+const setDefaultChain = async (req, res) => {
+  try {
+    const { uid } = req.params;
+    const { chain } = req.body;
+    const supportedChains = ['ethereum', 'polygon', 'arbitrum'];
+
+    if (!chain || !supportedChains.includes(chain)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid chain is required. Supported chains: ethereum, polygon, arbitrum',
+      });
+    }
+
+    // Find user by UID
+    const user = await User.findOne({ uid });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    // Set default chain
+    user.setDefaultChain(chain);
+    await user.save();
+
+    res.json({
+      success: true,
+      message: `Default chain set to ${chain}`,
+      data: {
+        defaultChain: user.defaultChain,
+        hasWalletForChain: user.hasWallet(chain)
+      },
+    });
+
+    // Log default chain change
+    logger.logUserAction('default_chain_changed', uid, {
+      newDefaultChain: chain,
+      hasWalletForChain: user.hasWallet(chain)
+    });
+  } catch (error) {
+    console.error('Set default chain error:', error);
+    logger.logError('users', error, req);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+    });
+  }
+};
+
 // @desc    Search users
 // @route   GET /api/users/search
 // @access  Public
@@ -382,6 +893,8 @@ const searchUsers = async (req, res) => {
   }
 };
 
+
+
 module.exports = {
   getUsers,
   getUserById,
@@ -391,4 +904,9 @@ module.exports = {
   updateUser,
   deleteUser,
   searchUsers,
+  ensureUserWallet,
+  ensureAllUsersWallets,
+  createWalletForChain,
+  setDefaultChain,
+  createAllMissingWallets,
 }; 

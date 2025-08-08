@@ -100,6 +100,17 @@ POST /users/logout
     "user": {
       "_id": "60f7b3b3b3b3b3b3b3b3b3b3",
       "uid": "google_uid_123",
+      "email": "john@example.com",
+      "isActive": false,
+      "lastLogin": "2023-01-01T00:00:00.000Z"
+    }
+  }
+}
+```
+
+
+      "_id": "60f7b3b3b3b3b3b3b3b3b3b3",
+      "uid": "google_uid_123",
       "email": "john.doe@gmail.com",
       "displayName": "John Doe",
       "photoURL": "https://lh3.googleusercontent.com/a/ACg8ocJ...",
@@ -356,22 +367,22 @@ POST /orders
   "success": true,
   "message": "BUY order created successfully",
   "data": {
-          "order": {
-        "_id": "60f7b3b3b3b3b3b3b3b3b3b3",
-        "uid": "CMj5c9ssZLPP8eoNfnA0GCp5n0g1",
-        "type": "buy",
-        "cryptocurrency": "USDT",
-        "amount": 100.50,
-        "price": 1.25,
-        "totalValue": 125.625,
-        "paymentMethods": ["Bank Transfer", "Esewa", "Khalti"],
-        "status": "pending",
-        "additionalInfo": "Please contact me for payment details",
-        "isActive": true,
-        "orderSummary": "BUY 100.5 USDT at 1.25",
-        "createdAt": "2023-01-01T00:00:00.000Z",
-        "updatedAt": "2023-01-01T00:00:00.000Z"
-      }
+    "order": {
+      "_id": "60f7b3b3b3b3b3b3b3b3b3b3",
+      "uid": "CMj5c9ssZLPP8eoNfnA0GCp5n0g1",
+      "type": "buy",
+      "cryptocurrency": "USDT",
+      "amount": 100.50,
+      "price": 1.25,
+      "totalValue": 125.625,
+      "paymentMethods": ["Bank Transfer", "Esewa", "Khalti"],
+      "status": "pending",
+      "additionalInfo": "Please contact me for payment details",
+      "isActive": true,
+      "orderSummary": "BUY 100.5 USDT at 1.25",
+      "createdAt": "2023-01-01T00:00:00.000Z",
+      "updatedAt": "2023-01-01T00:00:00.000Z"
+    }
   }
 }
 ```

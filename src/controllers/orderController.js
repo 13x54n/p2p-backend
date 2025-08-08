@@ -271,9 +271,10 @@ const updateOrder = async (req, res) => {
     // Update fields
     if (amount !== undefined) order.amount = amount;
     if (price !== undefined) order.price = price;
-    if (paymentMethods !== undefined) order.paymentMethods = paymentMethods;
     if (status !== undefined) order.status = status;
     if (additionalInfo !== undefined) order.additionalInfo = additionalInfo;
+    
+    if (paymentMethods !== undefined) order.paymentMethods = paymentMethods;
     
     // Update order limits only if provided
     if (minLimit !== undefined) order.minOrderLimit = parseFloat(minLimit);
