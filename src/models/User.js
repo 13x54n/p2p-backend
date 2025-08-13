@@ -115,7 +115,7 @@ userSchema.statics.findOrCreateFromGoogle = async function (googleUser) {
         displayName,
         photoURL,
         lastLogin: new Date(),
-        isActive: true, // Set to true on login
+        isActive: true, 
       }
     },
     {
@@ -132,8 +132,6 @@ userSchema.statics.findOrCreateFromGoogle = async function (googleUser) {
 userSchema.statics.findByUid = function (uid) {
   return this.findOne({ uid });
 };
-
-
 
 // Instance method to get public profile
 userSchema.methods.getPublicProfile = function () {
@@ -192,13 +190,13 @@ userSchema.methods.setWalletInfo = function (walletId, walletAddress, chain = 'e
 userSchema.methods.getAllWalletInfo = function () {
   const supportedChains = ['ethereum', 'polygon', 'arbitrum'];
   const wallets = {};
-  
+
   supportedChains.forEach(chain => {
     if (this.hasWallet(chain)) {
       wallets[chain] = this.getWalletInfo(chain);
     }
   });
-  
+
   return wallets;
 };
 
@@ -238,7 +236,7 @@ userSchema.methods.getWalletSummary = function () {
     missing: 0,
     chains: {}
   };
-  
+
   supportedChains.forEach(chain => {
     const hasWallet = this.hasWallet(chain);
     summary.chains[chain] = {
@@ -251,7 +249,7 @@ userSchema.methods.getWalletSummary = function () {
       summary.missing++;
     }
   });
-  
+
   return summary;
 };
 
@@ -259,7 +257,7 @@ userSchema.methods.getWalletSummary = function () {
 userSchema.methods.createMissingWallets = async function () {
   const missingChains = this.getMissingWallets();
   const createdWallets = [];
-  
+
   for (const chain of missingChains) {
     try {
       // This would typically call the Circle API
@@ -277,8 +275,8 @@ userSchema.methods.createMissingWallets = async function () {
       });
     }
   }
-  
+
   return createdWallets;
 };
 
-module.exports = mongoose.model('User', userSchema); 
+module.exports = mongoose.model('User', userSchema);

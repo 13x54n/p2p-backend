@@ -3,7 +3,6 @@ const User = require('../models/User');
 const logger = require('../utils/logger');
 const { initiateDeveloperControlledWalletsClient } = require('@circle-fin/developer-controlled-wallets');
 
-
 // @desc    Get all users
 // @route   GET /api/users
 // @access  Public
@@ -198,6 +197,9 @@ const getUserByUid = async (req, res) => {
       });
     }
 
+    // Token balances functionality not yet implemented
+    // const tokenBalances = await user.tokenBalances();
+
     const data = {
       ...user.getPublicProfile(),
       totalOrders,
@@ -293,7 +295,6 @@ const logoutUser = async (req, res) => {
 
     const { uid } = req.body;
 
-    // Validate required fields
     if (!uid) {
       return res.status(400).json({
         success: false,
@@ -301,12 +302,11 @@ const logoutUser = async (req, res) => {
       });
     }
 
-    // Find and update user
     const user = await User.findOneAndUpdate(
       { uid },
       {
         isActive: false,
-        lastLogin: new Date() // Update last login time on logout
+        lastLogin: new Date()
       },
       { new: true }
     );
@@ -321,9 +321,6 @@ const logoutUser = async (req, res) => {
     res.json({
       success: true,
       message: 'User logged out successfully',
-      data: {
-        user: user.getPublicProfile(),
-      },
     });
 
     // Log user logout
@@ -354,8 +351,6 @@ const deleteUser = async (req, res) => {
         message: 'User not found',
       });
     }
-
-
 
     await User.findByIdAndDelete(req.params.id);
 
@@ -892,8 +887,6 @@ const searchUsers = async (req, res) => {
     });
   }
 };
-
-
 
 module.exports = {
   getUsers,
