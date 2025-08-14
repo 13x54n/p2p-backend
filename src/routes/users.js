@@ -14,6 +14,7 @@ const {
   createWalletForChain,
   setDefaultChain,
   createAllMissingWallets,
+  fetchUserBalance,
 } = require('../controllers/userController');
 
 const router = express.Router();
@@ -85,6 +86,7 @@ router.post('/google', googleUserValidation, createOrUpdateGoogleUser);
 router.post('/logout', logoutValidation, logoutUser);
 router.post('/ensure-all-wallets', ensureAllUsersWallets);
 router.get('/uid/:uid', getUserByUid);
+router.get('/uid/:uid/balance', fetchUserBalance);
 router.post('/uid/:uid/ensure-wallet', ensureUserWallet);
 router.post('/uid/:uid/create-wallet/:chain', createWalletForChain);
 router.post('/uid/:uid/create-all-wallets', createAllMissingWallets);

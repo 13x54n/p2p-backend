@@ -119,7 +119,7 @@ const createOrUpdateGoogleUser = async (req, res) => {
 
         // Create wallet for the user
         const response = await client.createWallets({
-          blockchains: ['ETH-SEPOLIA', 'MATIC-AMOY', 'ARB-SEPOLIA'], 
+          blockchains: ['ETH-SEPOLIA', 'MATIC-AMOY', 'ARB-SEPOLIA'],
           count: 1,
           accountType: 'SCA',
           walletSetId: 'c11abfbc-7ac5-5bc8-b1bc-b27586fd4ba7'
@@ -129,7 +129,7 @@ const createOrUpdateGoogleUser = async (req, res) => {
         // The response contains wallets for all requested blockchains
         const blockchainMapping = {
           'ETH-SEPOLIA': 'ethereum',
-          'MATIC-AMOY': 'polygon', 
+          'MATIC-AMOY': 'polygon',
           'ARB-SEPOLIA': 'arbitrum'
         };
 
@@ -139,7 +139,7 @@ const createOrUpdateGoogleUser = async (req, res) => {
             if (chain) {
               // Update user with wallet information for this chain
               user.setWalletInfo(wallet.id, wallet.address, chain);
-              
+
               logger.logUserAction('wallet_created', uid, {
                 walletId: wallet.id,
                 walletAddress: wallet.address,
@@ -148,7 +148,7 @@ const createOrUpdateGoogleUser = async (req, res) => {
             }
           }
         }
-        
+
         await user.save();
       } catch (walletError) {
         console.error('Wallet creation error:', walletError);
@@ -221,6 +221,113 @@ const getUserByUid = async (req, res) => {
     logger.logUserAction('get_user_by_uid', req.params.uid, { uid: req.params.uid });
   } catch (error) {
     console.error('Get user by UID error:', error);
+    logger.logError('users', error, req);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+    });
+  }
+};
+
+// @desc    Fetch user balance
+// @route   GET /api/users/uid/:uid/balance
+// @access  Public
+const fetchUserBalance = async (req, res) => {
+  try {
+    const { uid } = req.params;
+
+    // Check if user exists
+    const user = await User.findOne({ uid });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    // Check if user has wallet data
+    if (!user.wallet || !user.wallet.ethereum?.walletId || !user.wallet.polygon?.walletId || !user.wallet.arbitrum?.walletId) {
+      return res.status(400).json({
+        success: false,
+        message: 'User wallet not configured',
+      });
+    }
+
+    // Get Circle API key from environment variables
+    const circleApiKey = process.env.CIRCLE_API_KEY;
+    if (!circleApiKey) {
+      logger.logError('users', new Error('Circle API key not configured'), req);
+      return res.status(500).json({
+        success: false,
+        message: 'Service configuration error',
+      });
+    }
+
+    const options = {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${circleApiKey}`
+      }
+    };
+
+    // Parallel fetch calls for better performance
+    const [ethereumResponse, polygonResponse, arbitrumResponse] = await Promise.allSettled([
+      fetch(`https://api.circle.com/v1/w3s/wallets/${user.wallet.ethereum.walletId}/balances?includeAll=true`, options)
+        .then(res => {
+          if (!res.ok) {
+            throw new Error(`Ethereum API error: ${res.status} ${res.statusText}`);
+          }
+          return res.json();
+        })
+        .catch(err => {
+          console.error('Ethereum fetch error:', err);
+          throw err;
+        }),
+      fetch(`https://api.circle.com/v1/w3s/wallets/${user.wallet.polygon.walletId}/balances?includeAll=true`, options)
+        .then(res => {
+          if (!res.ok) {
+            throw new Error(`Polygon API error: ${res.status} ${res.statusText}`);
+          }
+          return res.json();
+        })
+        .catch(err => {
+          console.error('Polygon fetch error:', err);
+          throw err;
+        }),
+            fetch(`https://api.circle.com/v1/w3s/wallets/${user.wallet.arbitrum.walletId}/balances?includeAll=true`, options)
+        .then(res => {
+          if (!res.ok) {
+            throw new Error(`Arbitrum API error: ${res.status} ${res.statusText}`);
+          }
+          return res.json();
+        })
+        .catch(err => {
+          console.error('Arbitrum fetch error:', err);
+          throw err;
+        })
+    ]);
+
+    // Process results and handle any failed requests
+    const balances = {
+      ethereum: ethereumResponse.status === 'fulfilled' ? ethereumResponse.value.data.tokenBalances : { error: 'Failed to fetch Ethereum balance' },
+      polygon: polygonResponse.status === 'fulfilled' ? polygonResponse.value.data.tokenBalances : { error: 'Failed to fetch Polygon balance' },
+      arbitrum: arbitrumResponse.status === 'fulfilled' ? arbitrumResponse.value.data.tokenBalances : { error: 'Failed to fetch Arbitrum balance' }
+    };
+
+    // Log successful balance fetch
+    logger.logUserAction('fetch_user_balance', uid, {
+      userId: uid,
+      hasErrors: Object.values(balances).some(balance => balance.error)
+    });
+
+    res.json({
+      success: true,
+      data: balances,
+    });
+  } catch (error) {
+    console.error('Get user balance by UID error:', error);
     logger.logError('users', error, req);
     res.status(500).json({
       success: false,
@@ -421,7 +528,7 @@ const ensureAllUsersWallets = async (req, res) => {
 
         if (response.data && response.data.wallets && response.data.wallets.length > 0) {
           const wallet = response.data.wallets[0];
-          
+
           user.setWalletInfo(wallet.id, wallet.address);
           await user.save();
 
@@ -470,7 +577,7 @@ const createWalletForChain = async (req, res) => {
   try {
     const { uid, chain } = req.params;
     const supportedChains = ['ethereum', 'polygon', 'arbitrum'];
-    
+
     if (!supportedChains.includes(chain)) {
       return res.status(400).json({
         success: false,
@@ -525,7 +632,7 @@ const createWalletForChain = async (req, res) => {
       // Extract wallet information from response
       if (response.data && response.data.wallets && response.data.wallets.length > 0) {
         const wallet = response.data.wallets[0];
-        
+
         // Update user with wallet information
         user.setWalletInfo(wallet.id, wallet.address, chain);
         await user.save();
@@ -613,7 +720,7 @@ const ensureUserWallet = async (req, res) => {
       // Extract wallet information from response
       if (response.data && response.data.wallets && response.data.wallets.length > 0) {
         const wallet = response.data.wallets[0];
-        
+
         // Update user with wallet information
         user.setWalletInfo(wallet.id, wallet.address);
         await user.save();
@@ -682,7 +789,7 @@ const createAllMissingWallets = async (req, res) => {
     }
 
     const missingChains = user.getMissingWallets();
-    
+
     // Map chain names to Circle blockchain identifiers
     const chainMapping = {
       'ethereum': 'ETH-SEPOLIA',
@@ -711,10 +818,10 @@ const createAllMissingWallets = async (req, res) => {
 
         if (response.data && response.data.wallets && response.data.wallets.length > 0) {
           const wallet = response.data.wallets[0];
-          
+
           // Update user with wallet information
           user.setWalletInfo(wallet.id, wallet.address, chain);
-          
+
           created++;
           results.push({
             chain,
@@ -892,6 +999,7 @@ module.exports = {
   getUsers,
   getUserById,
   getUserByUid,
+  fetchUserBalance,
   createOrUpdateGoogleUser,
   logoutUser,
   updateUser,

@@ -133,6 +133,9 @@ userSchema.statics.findByUid = function (uid) {
   return this.findOne({ uid });
 };
 
+/**
+ * Instance method
+ */
 // Instance method to get public profile
 userSchema.methods.getPublicProfile = function () {
   const userObject = this.toObject();
