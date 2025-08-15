@@ -272,6 +272,53 @@ const fetchUserBalance = async (req, res) => {
       }
     };
 
+    let response = null;
+    let ethPrice, maticPrice, arbPrice;
+    let ethPriceChange, maticPriceChange, arbPriceChange;
+    
+    try {
+      response = await fetch(`https://pro-api.coinmarketcap.com/v2/cryptocurrency/quotes/latest?symbol=ETH,POL,ARB`, {
+        method: 'GET',
+        headers: {
+          'X-CMC_PRO_API_KEY': process.env.CMC_API_KEY,
+        },
+      });
+
+      if (response.ok) {
+        const json = await response.json();
+        ethPrice = json.data.ETH[0].quote.USD.price;
+        ethPriceChange = json.data.ETH[0].quote.USD.percent_change_24h;
+        maticPrice = json.data.POL[0].quote.USD.price;
+        maticPriceChange = json.data.POL[0].quote.USD.percent_change_24h;
+        arbPrice = json.data.ARB[0].quote.USD.price;
+        arbPriceChange = json.data.ARB[0].quote.USD.percent_change_24h;
+        
+        console.log('Price changes from CoinMarketCap:', {
+          ETH: `${ethPriceChange}%`,
+          POL: `${maticPriceChange}%`,
+          ARB: `${arbPriceChange}%`
+        });
+      } else {
+        console.error('CoinMarketCap API request failed:', response.status, response.statusText);
+        // Set fallback prices if API fails
+        ethPrice = 3657.29;
+        ethPriceChange = 0;
+        maticPrice = 0.85;
+        maticPriceChange = 0;
+        arbPrice = 1.25;
+        arbPriceChange = 0;
+      }
+    } catch (ex) {
+      console.error('CoinMarketCap fetch error:', ex);
+      // Set fallback prices if fetch fails
+      ethPrice = 3657.29;
+      ethPriceChange = 0;
+      maticPrice = 0.85;
+      maticPriceChange = 0;
+      arbPrice = 1.25;
+      arbPriceChange = 0;
+    }
+
     // Parallel fetch calls for better performance
     const [ethereumResponse, polygonResponse, arbitrumResponse] = await Promise.allSettled([
       fetch(`https://api.circle.com/v1/w3s/wallets/${user.wallet.ethereum.walletId}/balances?includeAll=true`, options)
@@ -296,7 +343,7 @@ const fetchUserBalance = async (req, res) => {
           console.error('Polygon fetch error:', err);
           throw err;
         }),
-            fetch(`https://api.circle.com/v1/w3s/wallets/${user.wallet.arbitrum.walletId}/balances?includeAll=true`, options)
+      fetch(`https://api.circle.com/v1/w3s/wallets/${user.wallet.arbitrum.walletId}/balances?includeAll=true`, options)
         .then(res => {
           if (!res.ok) {
             throw new Error(`Arbitrum API error: ${res.status} ${res.statusText}`);
@@ -309,12 +356,53 @@ const fetchUserBalance = async (req, res) => {
         })
     ]);
 
+    // ccxt too slow
+    // const ethPrice = await exchange.fetchMarkPrice('ETH/USDT');
+    // console.log(ethPrice.markPrice);
+
     // Process results and handle any failed requests
     const balances = {
       ethereum: ethereumResponse.status === 'fulfilled' ? ethereumResponse.value.data.tokenBalances : { error: 'Failed to fetch Ethereum balance' },
       polygon: polygonResponse.status === 'fulfilled' ? polygonResponse.value.data.tokenBalances : { error: 'Failed to fetch Polygon balance' },
-      arbitrum: arbitrumResponse.status === 'fulfilled' ? arbitrumResponse.value.data.tokenBalances : { error: 'Failed to fetch Arbitrum balance' }
+      arbitrum: arbitrumResponse.status === 'fulfilled' ? arbitrumResponse.value.data.tokenBalances : { error: 'Failed to fetch Arbitrum balance' },
+      ethPrice: ethPrice,
+      ethPriceChange: ethPriceChange,
+      maticPrice: maticPrice,
+      maticPriceChange: maticPriceChange,
+      arbPrice: arbPrice,
+      arbPriceChange: arbPriceChange,
     };
+
+    // Inject percentage changes into token data based on symbol
+    if (balances.ethereum && !balances.ethereum.error) {
+      balances.ethereum.forEach(token => {
+        if (token.token.symbol.includes('ETH')) {
+          token.percentChange = ethPriceChange;
+        } else if (token.token.symbol.includes('USDC') || token.token.symbol.includes('USDT')) {
+          token.percentChange = 0; // Stablecoins have 0% change
+        }
+      });
+    }
+
+    if (balances.polygon && !balances.polygon.error) {
+      balances.polygon.forEach(token => {
+        if (token.token.symbol.includes('POL') || token.token.symbol.includes('MATIC')) {
+          token.percentChange = maticPriceChange;
+        } else if (token.token.symbol.includes('USDC') || token.token.symbol.includes('USDT')) {
+          token.percentChange = 0; // Stablecoins have 0% change
+        }
+      });
+    }
+
+    if (balances.arbitrum && !balances.arbitrum.error) {
+      balances.arbitrum.forEach(token => {
+        if (token.token.symbol.includes('ARB')) {
+          token.percentChange = arbPriceChange;
+        } else if (token.token.symbol.includes('USDC') || token.token.symbol.includes('USDT')) {
+          token.percentChange = 0; // Stablecoins have 0% change
+        }
+      });
+    }
 
     // Log successful balance fetch
     logger.logUserAction('fetch_user_balance', uid, {
