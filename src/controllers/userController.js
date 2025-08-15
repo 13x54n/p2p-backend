@@ -276,11 +276,18 @@ const fetchUserBalance = async (req, res) => {
     let ethPrice, maticPrice, arbPrice;
     let ethPriceChange, maticPriceChange, arbPriceChange;
     
+    // Check if CoinMarketCap API key is configured
+    const cmcApiKey = process.env.CMC_API_KEY;
+    if (!cmcApiKey) {
+      console.error('CMC_API_KEY not configured. Percentage changes will not be available.');
+      throw new Error('CoinMarketCap API key not configured. Please set CMC_API_KEY environment variable.');
+    }
+
     try {
       response = await fetch(`https://pro-api.coinmarketcap.com/v2/cryptocurrency/quotes/latest?symbol=ETH,POL,ARB`, {
         method: 'GET',
         headers: {
-          'X-CMC_PRO_API_KEY': process.env.CMC_API_KEY,
+          'X-CMC_PRO_API_KEY': cmcApiKey,
         },
       });
 
@@ -300,23 +307,11 @@ const fetchUserBalance = async (req, res) => {
         });
       } else {
         console.error('CoinMarketCap API request failed:', response.status, response.statusText);
-        // Set fallback prices if API fails
-        ethPrice = 3657.29;
-        ethPriceChange = 0;
-        maticPrice = 0.85;
-        maticPriceChange = 0;
-        arbPrice = 1.25;
-        arbPriceChange = 0;
+        throw new Error(`CoinMarketCap API request failed: ${response.status} ${response.statusText}`);
       }
     } catch (ex) {
       console.error('CoinMarketCap fetch error:', ex);
-      // Set fallback prices if fetch fails
-      ethPrice = 3657.29;
-      ethPriceChange = 0;
-      maticPrice = 0.85;
-      maticPriceChange = 0;
-      arbPrice = 1.25;
-      arbPriceChange = 0;
+      throw new Error(`Failed to fetch CoinMarketCap data: ${ex.message}`);
     }
 
     // Parallel fetch calls for better performance
@@ -373,36 +368,58 @@ const fetchUserBalance = async (req, res) => {
       arbPriceChange: arbPriceChange,
     };
 
-    // Inject percentage changes into token data based on symbol
-    if (balances.ethereum && !balances.ethereum.error) {
-      balances.ethereum.forEach(token => {
-        if (token.token.symbol.includes('ETH')) {
-          token.percentChange = ethPriceChange;
-        } else if (token.token.symbol.includes('USDC') || token.token.symbol.includes('USDT')) {
-          token.percentChange = 0; // Stablecoins have 0% change
-        }
-      });
-    }
+    // Inject percentage changes into token data based on symbol (regardless of blockchain)
+    const allTokens = [
+      ...(balances.ethereum && !balances.ethereum.error ? balances.ethereum : []),
+      ...(balances.polygon && !balances.polygon.error ? balances.polygon : []),
+      ...(balances.arbitrum && !balances.arbitrum.error ? balances.arbitrum : [])
+    ];
 
-    if (balances.polygon && !balances.polygon.error) {
-      balances.polygon.forEach(token => {
-        if (token.token.symbol.includes('POL') || token.token.symbol.includes('MATIC')) {
-          token.percentChange = maticPriceChange;
-        } else if (token.token.symbol.includes('USDC') || token.token.symbol.includes('USDT')) {
-          token.percentChange = 0; // Stablecoins have 0% change
-        }
-      });
-    }
+    console.log('Processing all tokens across all chains:', allTokens.map(t => t.token.symbol));
+    
+    allTokens.forEach(token => {
+      if (token.token.symbol.includes('ETH') || token.token.symbol.includes('ETH-SEPOLIA')) {
+        token.percentChange = ethPriceChange;
+        console.log(`ETH token ${token.token.symbol} on ${token.token.blockchain}: set percentChange = ${ethPriceChange}%`);
+      } else if (token.token.symbol.includes('POL') || token.token.symbol.includes('MATIC') || token.token.symbol.includes('POL-AMOY')) {
+        token.percentChange = maticPriceChange;
+        console.log(`POL/MATIC token ${token.token.symbol} on ${token.token.blockchain}: set percentChange = ${maticPriceChange}%`);
+      } else if (token.token.symbol.includes('ARB') || token.token.symbol.includes('ARB-SEPOLIA')) {
+        token.percentChange = arbPriceChange;
+        console.log(`ARB token ${token.token.symbol} on ${token.token.blockchain}: set percentChange = ${arbPriceChange}%`);
+      } else if (token.token.symbol.includes('USDC') || token.token.symbol.includes('USDT')) {
+        token.percentChange = 0; // Stablecoins have 0% change
+        console.log(`Stablecoin ${token.token.symbol} on ${token.token.blockchain}: set percentChange = 0%`);
+      } else {
+        // For any other tokens, set a default percentage change
+        token.percentChange = 0;
+        console.log(`Other token ${token.token.symbol} on ${token.token.blockchain}: set percentChange = 0%`);
+      }
+    });
 
-    if (balances.arbitrum && !balances.arbitrum.error) {
-      balances.arbitrum.forEach(token => {
-        if (token.token.symbol.includes('ARB')) {
-          token.percentChange = arbPriceChange;
-        } else if (token.token.symbol.includes('USDC') || token.token.symbol.includes('USDT')) {
-          token.percentChange = 0; // Stablecoins have 0% change
-        }
-      });
-    }
+    // Log the percentage changes being injected
+    console.log('Injecting percentage changes:', {
+      ETH: ethPriceChange,
+      POL: maticPriceChange,
+      ARB: arbPriceChange,
+      hasCMCKey: !!cmcApiKey
+    });
+
+    // Log summary of all tokens processed
+    // Ensure every token has a percentChange field
+    allTokens.forEach(token => {
+      if (token.percentChange === undefined) {
+        token.percentChange = 0;
+        console.log(`Token ${token.token.symbol} had no percentChange, set to 0%`);
+      }
+    });
+    
+    console.log('Summary of all tokens processed:', allTokens.map(t => ({
+      symbol: t.token.symbol,
+      blockchain: t.token.blockchain || 'unknown',
+      percentChange: t.percentChange,
+      hasPercentChange: t.percentChange !== undefined
+    })));
 
     // Log successful balance fetch
     logger.logUserAction('fetch_user_balance', uid, {

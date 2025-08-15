@@ -19,6 +19,30 @@ A modern Node.js backend API built with Express.js, featuring authentication, ra
 - MongoDB (local or cloud instance)
 - npm or yarn
 
+## API Configuration
+
+### Required API Keys
+
+To enable real-time percentage changes for tokens, you need to configure the following API keys:
+
+#### CoinMarketCap API (Required for percentage changes)
+1. Sign up at [CoinMarketCap Developer Portal](https://coinmarketcap.com/api/)
+2. Get your API key from the dashboard
+3. Add to your `.env` file:
+```env
+CMC_API_KEY=your_coinmarketcap_api_key_here
+```
+
+#### Circle API (Required for wallet balances)
+1. Sign up at [Circle Developer Portal](https://developers.circle.com/)
+2. Get your API key from the dashboard
+3. Add to your `.env` file:
+```env
+CIRCLE_API_KEY=your_circle_api_key_here
+```
+
+**Note**: Without the CoinMarketCap API key, percentage changes will not be available and the balance endpoint will fail.
+
 ## Installation
 
 1. Clone the repository:
