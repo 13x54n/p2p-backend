@@ -299,12 +299,6 @@ const fetchUserBalance = async (req, res) => {
         maticPriceChange = json.data.POL[0].quote.USD.percent_change_24h;
         arbPrice = json.data.ARB[0].quote.USD.price;
         arbPriceChange = json.data.ARB[0].quote.USD.percent_change_24h;
-        
-        console.log('Price changes from CoinMarketCap:', {
-          ETH: `${ethPriceChange}%`,
-          POL: `${maticPriceChange}%`,
-          ARB: `${arbPriceChange}%`
-        });
       } else {
         console.error('CoinMarketCap API request failed:', response.status, response.statusText);
         throw new Error(`CoinMarketCap API request failed: ${response.status} ${response.statusText}`);
@@ -351,10 +345,6 @@ const fetchUserBalance = async (req, res) => {
         })
     ]);
 
-    // ccxt too slow
-    // const ethPrice = await exchange.fetchMarkPrice('ETH/USDT');
-    // console.log(ethPrice.markPrice);
-
     // Process results and handle any failed requests
     const balances = {
       ethereum: ethereumResponse.status === 'fulfilled' ? ethereumResponse.value.data.tokenBalances : { error: 'Failed to fetch Ethereum balance' },
@@ -374,35 +364,20 @@ const fetchUserBalance = async (req, res) => {
       ...(balances.polygon && !balances.polygon.error ? balances.polygon : []),
       ...(balances.arbitrum && !balances.arbitrum.error ? balances.arbitrum : [])
     ];
-
-    console.log('Processing all tokens across all chains:', allTokens.map(t => t.token.symbol));
     
     allTokens.forEach(token => {
       if (token.token.symbol.includes('ETH') || token.token.symbol.includes('ETH-SEPOLIA')) {
         token.percentChange = ethPriceChange;
-        console.log(`ETH token ${token.token.symbol} on ${token.token.blockchain}: set percentChange = ${ethPriceChange}%`);
       } else if (token.token.symbol.includes('POL') || token.token.symbol.includes('MATIC') || token.token.symbol.includes('POL-AMOY')) {
         token.percentChange = maticPriceChange;
-        console.log(`POL/MATIC token ${token.token.symbol} on ${token.token.blockchain}: set percentChange = ${maticPriceChange}%`);
       } else if (token.token.symbol.includes('ARB') || token.token.symbol.includes('ARB-SEPOLIA')) {
         token.percentChange = arbPriceChange;
-        console.log(`ARB token ${token.token.symbol} on ${token.token.blockchain}: set percentChange = ${arbPriceChange}%`);
       } else if (token.token.symbol.includes('USDC') || token.token.symbol.includes('USDT')) {
         token.percentChange = 0; // Stablecoins have 0% change
-        console.log(`Stablecoin ${token.token.symbol} on ${token.token.blockchain}: set percentChange = 0%`);
       } else {
         // For any other tokens, set a default percentage change
         token.percentChange = 0;
-        console.log(`Other token ${token.token.symbol} on ${token.token.blockchain}: set percentChange = 0%`);
       }
-    });
-
-    // Log the percentage changes being injected
-    console.log('Injecting percentage changes:', {
-      ETH: ethPriceChange,
-      POL: maticPriceChange,
-      ARB: arbPriceChange,
-      hasCMCKey: !!cmcApiKey
     });
 
     // Log summary of all tokens processed
@@ -410,17 +385,9 @@ const fetchUserBalance = async (req, res) => {
     allTokens.forEach(token => {
       if (token.percentChange === undefined) {
         token.percentChange = 0;
-        console.log(`Token ${token.token.symbol} had no percentChange, set to 0%`);
       }
     });
-    
-    console.log('Summary of all tokens processed:', allTokens.map(t => ({
-      symbol: t.token.symbol,
-      blockchain: t.token.blockchain || 'unknown',
-      percentChange: t.percentChange,
-      hasPercentChange: t.percentChange !== undefined
-    })));
-
+ 
     // Log successful balance fetch
     logger.logUserAction('fetch_user_balance', uid, {
       userId: uid,
