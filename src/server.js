@@ -16,6 +16,7 @@ const userRoutes = require('./routes/users');
 const orderRoutes = require('./routes/orders');
 const healthRoutes = require('./routes/health');
 const logRoutes = require('./routes/logs');
+const transferRoutes = require('./routes/transfers');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -74,6 +75,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/health', healthRoutes);
 app.use('/api/logs', logRoutes);
+app.use('/api/transfers', transferRoutes);
 
 // Error handling middleware
 app.use(notFound);
