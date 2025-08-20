@@ -473,6 +473,124 @@ PUT /orders/60f7b3b3b3b3b3b3b3b3b3b3
 DELETE /orders/60f7b3b3b3b3b3b3b3b3b3b3
 ```
 
+### Transfers
+
+#### Request Security Code for Transfer
+```http
+POST /transfers/request-code
+```
+
+**Request Body:**
+```json
+{
+  "senderId": "user123@example.com",
+  "recipient": "0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6",
+  "recipientType": "external",
+  "amount": 100.50,
+  "token": "USDT",
+  "memo": "Payment for services"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Security code sent to your email",
+  "data": {
+    "transferId": "uuid-here",
+    "expiresIn": "5 minutes"
+  }
+}
+```
+
+#### Create Transfer
+```http
+POST /transfers
+```
+
+**Request Body:**
+```json
+{
+  "senderId": "user123@example.com",
+  "recipient": "0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6",
+  "recipientType": "external",
+  "amount": 100.50,
+  "token": "USDT",
+  "memo": "Payment for services",
+  "securityCode": "123456",
+  "transferId": "uuid-here"
+}
+```
+
+**Response:**
+```json
+{
+  "success": false,
+  "message": "Transfer creation not yet implemented (security code validated)",
+  "data": {
+    "transferId": "uuid-here",
+    "validated": true
+  }
+}
+```
+
+#### Get User Transfers
+```http
+GET /transfers?userId=user123@example.com
+```
+
+**Response:**
+```json
+{
+  "success": false,
+  "message": "Get user transfers not yet implemented",
+  "data": null
+}
+```
+
+#### Get Transfer by ID
+```http
+GET /transfers/60f7b3b3b3b3b3b3b3b3b3b3?userId=user123@example.com
+```
+
+**Response:**
+```json
+{
+  "success": false,
+  "message": "Get transfer by ID not yet implemented",
+  "data": null
+}
+```
+
+#### Get Transfer Status
+```http
+GET /transfers/status/60f7b3b3b3b3b3b3b3b3b3b3?userId=user123@example.com
+```
+
+**Response:**
+```json
+{
+  "success": false,
+  "message": "Get transfer status not yet implemented",
+  "data": null
+}
+```
+
+**Note:** The `senderId` and `recipient` fields can be:
+- User UID (e.g., "user123")
+- Email address (e.g., "user@example.com")
+- Wallet address (e.g., "0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6")
+
+**Recipient Types:**
+- **Internal Users**: Registered users in the system (email, UID, or wallet address)
+- **External Wallets**: Any valid cryptocurrency wallet address that doesn't exist in the user database
+
+**Transfer Flow:**
+1. **Request Security Code**: Send `senderId` and `recipient` to get a 6-digit security code
+2. **Confirm Transfer**: Use the security code and transfer ID to complete the transfer
+3. **Validation**: Backend automatically detects if recipient is internal user or external wallet
+
 ## Error Responses
 
 All endpoints return consistent error responses:

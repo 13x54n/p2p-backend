@@ -1,4 +1,181 @@
 const logger = require('../utils/logger');
+const SecurityCode = require('../models/SecurityCode');
+const User = require('../models/User');
+const { generateSecurityCode, sendSecurityCodeEmail } = require('../utils/emailService');
+const { v4: uuidv4 } = require('uuid');
+
+/**
+ * Find user by uid, email, or wallet address
+ * @param {string} identifier - uid, email, or wallet address
+ * @returns {Object|null} User object or null if not found
+ */
+const findUserByIdentifier = async (identifier) => {
+  try {
+    if (!identifier) return null;
+
+    // Try to find by uid first
+    let user = await User.findByUid(identifier);
+    if (user) return user;
+
+    // Try to find by email
+    user = await User.findOne({ email: identifier.toLowerCase() });
+    if (user) return user;
+
+    // Try to find by wallet address (search across all chains)
+    const walletQuery = {
+      $or: [
+        { 'wallet.ethereum.walletAddress': identifier },
+        { 'wallet.polygon.walletAddress': identifier },
+        { 'wallet.arbitrum.walletAddress': identifier }
+      ]
+    };
+
+    user = await User.findOne(walletQuery);
+    if (user) return user;
+
+    return null;
+  } catch (error) {
+    logger.error('Error finding user by identifier', { identifier, error: error.message });
+    return null;
+  }
+};
+
+/**
+ * Request security code for transfer
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ */
+const requestSecurityCode = async (req, res) => {
+  try {
+    const { recipient, recipientType, amount, token, memo, senderId } = req.body;
+
+    if (!senderId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Sender ID is required',
+        data: null
+      });
+    }
+
+    // Find sender user
+    const senderUser = await findUserByIdentifier(senderId);
+    if (!senderUser) {
+      return res.status(400).json({
+        success: false,
+        message: 'Sender not found',
+        data: null
+      });
+    }
+
+    // Validate recipient based on type
+    let recipientInfo = {
+      type: recipientType,
+      address: recipient,
+      userId: null
+    };
+
+    if (recipientType === 'internal') {
+      // For internal transfers, validate that recipient exists
+      const recipientUser = await findUserByIdentifier(recipient);
+      if (!recipientUser) {
+        return res.status(400).json({
+          success: false,
+          message: 'Internal recipient not found',
+          data: null
+        });
+      }
+      recipientInfo.userId = recipientUser.uid;
+    } else if (recipientType === 'external') {
+      // For external transfers, validate wallet address format
+      const isValidWalletAddress =
+        /^0x[a-fA-F0-9]{40}$/.test(recipient) || // Ethereum-style addresses
+        /^[a-zA-Z0-9]{26,35}$/.test(recipient) || // Bitcoin-style addresses
+        /^[a-zA-Z0-9]{32,44}$/.test(recipient); // Other crypto addresses
+
+      if (!isValidWalletAddress) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid external wallet address format',
+          data: null
+        });
+      }
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid recipient type. Must be "internal" or "external"',
+        data: null
+      });
+    }
+
+    logger.info('Security code requested', {
+      userId: senderUser.uid,
+      recipient: recipient,
+      amount: amount,
+      token: token
+    });
+
+    // Generate unique transfer ID
+    const transferId = uuidv4();
+
+    // Generate 6-digit security code
+    const securityCode = generateSecurityCode();
+
+    // Create security code record
+    const newSecurityCode = new SecurityCode({
+      userId: senderUser.uid,
+      transferId: transferId,
+      code: securityCode,
+      recipient: recipient,
+      amount: amount,
+      token: token,
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000) // 5 minutes from now
+    });
+
+    // Save security code to database
+    await newSecurityCode.save();
+
+    const emailSent = await sendSecurityCodeEmail(
+      senderUser.email,
+      securityCode,
+      recipient,
+      amount,
+      token
+    );
+
+    if (!emailSent) {
+      // Delete the security code if email failed
+      await SecurityCode.findByIdAndDelete(newSecurityCode._id);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to send security code email',
+        data: null
+      });
+    }
+
+    logger.info('Security code created and sent successfully', {
+      userId: senderUser.uid,
+      transferId: transferId,
+      recipient: recipient
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Security code sent to your email',
+      data: {
+        transferId: transferId,
+        expiresIn: '5 minutes'
+      }
+    });
+
+  } catch (error) {
+    logger.error('Error requesting security code', { error: error.message, stack: error.stack });
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      data: null
+    });
+  }
+};
 
 /**
  * Create a new transfer
@@ -7,38 +184,134 @@ const logger = require('../utils/logger');
  */
 const createTransfer = async (req, res) => {
   try {
-    logger.info('Transfer creation requested', { 
-      userId: req.user?.id || 'no-user', 
-      recipient: req.body.recipient,
-      amount: req.body.amount,
-      token: req.body.token 
-    });
+    const { recipient, recipientType, amount, token, memo, securityCode, transferId, senderId } = req.body;
 
-    console.log('Transfer request body:', req.body);
-
-    // here we check if it's email or uid or wallet address
-    if (req.body.recipient.includes('@')) {
-      // it's email
-      
-    } else if (req.body.recipient.length === 36) {
-      // it's uid
-      
-    } else {
-      // it's wallet address
-      
+    if (!senderId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Sender ID is required',
+        data: null
+      });
     }
 
-    // TODO: Implement transfer creation logic
+    // Find sender user
+    const senderUser = await findUserByIdentifier(senderId);
+    if (!senderUser) {
+      return res.status(400).json({
+        success: false,
+        message: 'Sender not found',
+        data: null
+      });
+    }
+
+    // Validate recipient based on type
+    let recipientInfo = {
+      type: recipientType,
+      address: recipient,
+      userId: null
+    };
+
+    if (recipientType === 'internal') {
+      // For internal transfers, validate that recipient exists
+      const recipientUser = await findUserByIdentifier(recipient);
+      if (!recipientUser) {
+        return res.status(400).json({
+          success: false,
+          message: 'Internal recipient not found',
+          data: null
+        });
+      }
+      recipientInfo.userId = recipientUser.uid;
+    } else if (recipientType === 'external') {
+      // For external transfers, validate wallet address format
+      const isValidWalletAddress =
+        /^0x[a-fA-F0-9]{40}$/.test(recipient) || // Ethereum-style addresses
+        /^[a-zA-Z0-9]{26,35}$/.test(recipient) || // Bitcoin-style addresses
+        /^[a-zA-Z0-9]{32,44}$/.test(recipient); // Other crypto addresses
+
+      if (!isValidWalletAddress) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid external wallet address format',
+          data: null
+        });
+      }
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid recipient type. Must be "internal" or "external"',
+        data: null
+      });
+    }
+
+    logger.info('Transfer creation requested', {
+      userId: senderUser.uid,
+      recipient: recipient,
+      amount: amount,
+      token: token,
+      transferId: transferId
+    });
+
+    // Validate security code
+    if (!securityCode || !transferId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Security code and transfer ID are required',
+        data: null
+      });
+    }
+
+    // Get and validate security code
+    const validSecurityCode = await SecurityCode.getValidCode(transferId);
+    if (!validSecurityCode) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired security code',
+        data: null
+      });
+    }
+
+    // Check if code matches
+    if (validSecurityCode.code !== securityCode) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid security code',
+        data: null
+      });
+    }
+
+    // Check if code belongs to this user
+    if (validSecurityCode.userId !== senderUser.uid) {
+      return res.status(403).json({
+        success: false,
+        message: 'Security code does not belong to this user',
+        data: null
+      });
+    }
+
+    // Mark security code as used
+    await validSecurityCode.markAsUsed();
+
+    // TODO: Implement actual transfer logic
     // 1. Validate user has sufficient balance
     // 2. Create transfer record in database
     // 3. Update user balances
     // 4. Send confirmation email
     // 5. Return transfer details
 
-    res.status(501).json({
+    logger.info('Transfer validated successfully', {
+      userId: senderUser.uid,
+      transferId: transferId,
+      recipient: recipient
+    });
+
+    res.status(200).json({
       success: false,
-      message: 'Transfer creation not yet implemented',
-      data: null
+      message: 'Transfer creation not yet implemented (security code validated)',
+      data: {
+        transferId: transferId,
+        validated: true
+      }
     });
 
   } catch (error) {
@@ -58,7 +331,27 @@ const createTransfer = async (req, res) => {
  */
 const getUserTransfers = async (req, res) => {
   try {
-    logger.info('User transfers requested', { userId: req.user.id });
+    const { userId } = req.query;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'User ID is required',
+        data: null
+      });
+    }
+
+    // Find user
+    const user = await findUserByIdentifier(userId);
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: 'User not found',
+        data: null
+      });
+    }
+
+    logger.info('User transfers requested', { userId: user.uid });
 
     // TODO: Implement get user transfers logic
     // 1. Query database for user's transfers
@@ -89,7 +382,27 @@ const getUserTransfers = async (req, res) => {
 const getTransferById = async (req, res) => {
   try {
     const { id } = req.params;
-    logger.info('Transfer details requested', { userId: req.user.id, transferId: id });
+    const { userId } = req.query;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'User ID is required',
+        data: null
+      });
+    }
+
+    // Find user
+    const user = await findUserByIdentifier(userId);
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: 'User not found',
+        data: null
+      });
+    }
+
+    logger.info('Transfer details requested', { userId: user.uid, transferId: id });
 
     // TODO: Implement get transfer by ID logic
     // 1. Validate transfer ID
@@ -120,7 +433,27 @@ const getTransferById = async (req, res) => {
 const getTransferStatus = async (req, res) => {
   try {
     const { id } = req.params;
-    logger.info('Transfer status requested', { userId: req.user.id, transferId: id });
+    const { userId } = req.query;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'User ID is required',
+        data: null
+      });
+    }
+
+    // Find user
+    const user = await findUserByIdentifier(userId);
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: 'User not found',
+        data: null
+      });
+    }
+
+    logger.info('Transfer status requested', { userId: user.uid, transferId: id });
 
     // TODO: Implement get transfer status logic
     // 1. Validate transfer ID
@@ -144,6 +477,7 @@ const getTransferStatus = async (req, res) => {
 };
 
 module.exports = {
+  requestSecurityCode,
   createTransfer,
   getUserTransfers,
   getTransferById,

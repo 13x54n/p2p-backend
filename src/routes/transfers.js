@@ -2,6 +2,13 @@ const express = require('express');
 const router = express.Router();
 const transferController = require('../controllers/transferController');
 const { validateTransfer } = require('../middleware/validation');
+const { validateSecurityCodeRequest } = require('../middleware/validation');
+
+// POST /api/transfers/request-code - Request security code for transfer
+router.post('/request-code',
+  validateSecurityCodeRequest,
+  transferController.requestSecurityCode
+);
 
 // POST /api/transfers - Create a new transfer
 router.post('/',
