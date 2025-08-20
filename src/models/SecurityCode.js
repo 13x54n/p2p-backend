@@ -50,6 +50,14 @@ const securityCodeSchema = new mongoose.Schema({
     required: true
   },
   
+  // Blockchain information (Circle API format)
+  blockchain: {
+    type: String,
+    required: true,
+    enum: ['ARB', 'ARB-SEPOLIA', 'AVAX', 'AVAX-FUJI', 'BASE', 'BASE-SEPOLIA', 'ETH', 'ETH-SEPOLIA', 'MATIC', 'MATIC-AMOY', 'OP', 'OP-SEPOLIA', 'SOL', 'SOL-DEVNET', 'UNI', 'UNI-SEPOLIA'],
+    default: 'ETH'
+  },
+  
   // Timestamps
   createdAt: {
     type: Date,
@@ -65,7 +73,6 @@ const securityCodeSchema = new mongoose.Schema({
 
 // Indexes for performance (explicitly defined to avoid duplicates)
 securityCodeSchema.index({ userId: 1, createdAt: -1 });
-securityCodeSchema.index({ transferId: 1 }, { unique: true });
 securityCodeSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 }); // TTL index
 
 // Pre-save middleware to set expiration

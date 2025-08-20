@@ -1,7 +1,9 @@
 const logger = require('../utils/logger');
 const SecurityCode = require('../models/SecurityCode');
 const User = require('../models/User');
+const Transfer = require('../models/Transfer');
 const { generateSecurityCode, sendSecurityCodeEmail } = require('../utils/emailService');
+const circleService = require('../utils/circleService');
 const { v4: uuidv4 } = require('uuid');
 
 /**
@@ -47,7 +49,7 @@ const findUserByIdentifier = async (identifier) => {
  */
 const requestSecurityCode = async (req, res) => {
   try {
-    const { recipient, recipientType, amount, token, memo, senderId } = req.body;
+    const { recipient, recipientType, amount, token, memo, senderId, blockchain } = req.body;
 
     if (!senderId) {
       return res.status(400).json({
@@ -111,7 +113,8 @@ const requestSecurityCode = async (req, res) => {
       userId: senderUser.uid,
       recipient: recipient,
       amount: amount,
-      token: token
+      token: token,
+      blockchain: blockchain || 'ETH'
     });
 
     // Generate unique transfer ID
@@ -128,6 +131,7 @@ const requestSecurityCode = async (req, res) => {
       recipient: recipient,
       amount: amount,
       token: token,
+      blockchain: blockchain || 'ETH', // Store blockchain from frontend
       expiresAt: new Date(Date.now() + 5 * 60 * 1000) // 5 minutes from now
     });
 
@@ -184,7 +188,7 @@ const requestSecurityCode = async (req, res) => {
  */
 const createTransfer = async (req, res) => {
   try {
-    const { recipient, recipientType, amount, token, memo, securityCode, transferId, senderId } = req.body;
+    const { recipient, recipientType, amount, token, memo, securityCode, transferId, senderId, blockchain } = req.body;
 
     if (!senderId) {
       return res.status(400).json({
@@ -249,7 +253,8 @@ const createTransfer = async (req, res) => {
       recipient: recipient,
       amount: amount,
       token: token,
-      transferId: transferId
+      transferId: transferId,
+      blockchain: selectedBlockchain
     });
 
     // Validate security code
@@ -292,27 +297,183 @@ const createTransfer = async (req, res) => {
     // Mark security code as used
     await validSecurityCode.markAsUsed();
 
-    // TODO: Implement actual transfer logic
-    // 1. Validate user has sufficient balance
-    // 2. Create transfer record in database
-    // 3. Update user balances
-    // 4. Send confirmation email
-    // 5. Return transfer details
+    // Validate user has sufficient balance (this would check against Circle API)
+    // For now, we'll proceed with the transfer and let Circle handle balance validation
 
-    logger.info('Transfer validated successfully', {
-      userId: senderUser.uid,
-      transferId: transferId,
-      recipient: recipient
-    });
+    // Use blockchain from frontend request, fallback to user's default chain
+    const selectedBlockchain = blockchain || senderUser.defaultChain || 'ETH-SEPOLIA';
 
-    res.status(200).json({
-      success: false,
-      message: 'Transfer creation not yet implemented (security code validated)',
-      data: {
-        transferId: transferId,
-        validated: true
+    // Get sender's wallet info for the selected blockchain
+    const senderWalletInfo = senderUser.getWalletInfo(selectedBlockchain);
+    if (!senderWalletInfo) {
+      return res.status(400).json({
+        success: false,
+        message: `Sender does not have a wallet configured for ${selectedBlockchain}`,
+        data: null
+      });
+    }
+
+    // Get destination address based on recipient type
+    let destinationAddress;
+    if (recipientType === 'internal') {
+      // For internal users, get their wallet address
+      const recipientUser = await findUserByIdentifier(recipient); // Re-find recipientUser here
+      if (!recipientUser) {
+        return res.status(400).json({
+          success: false,
+          message: `Recipient not found for internal transfer`,
+          data: null
+        });
       }
+      const recipientWalletInfo = recipientUser.getWalletInfo(selectedBlockchain);
+      if (!recipientWalletInfo) {
+        return res.status(400).json({
+          success: false,
+          message: `Recipient does not have a wallet configured for ${selectedBlockchain}`,
+          data: null
+        });
+      }
+      destinationAddress = recipientWalletInfo.walletAddress;
+    } else {
+      // For external wallets, use the provided address directly
+      destinationAddress = recipient;
+    }
+
+    // Get Circle token ID for the specified token
+    const tokenId = circleService.getTokenId(token, selectedBlockchain);
+    if (!tokenId) {
+      return res.status(400).json({
+        success: false,
+        message: `Token ${token} is not supported on ${selectedBlockchain}`,
+        data: null
+      });
+    }
+
+    // Create transfer record in database
+    const transfer = new Transfer({
+      senderId: senderUser.uid,
+      recipient: destinationAddress,
+      recipientType,
+      recipientUserId: recipientType === 'internal' ? recipientUser.uid : null,
+      amount: parseFloat(amount),
+      token,
+      memo,
+      securityCode,
+      blockchain: selectedBlockchain,
+      status: 'pending'
     });
+
+    await transfer.save();
+
+    // Check if Circle service is available
+    if (!circleService.isAvailable()) {
+      // Mark transfer as failed if Circle service is not available
+      await transfer.markAsFailed('Circle API service not available');
+
+      return res.status(503).json({
+        success: false,
+        message: 'Blockchain service temporarily unavailable. Please try again later.',
+        data: {
+          transferId: transfer._id,
+          status: 'failed',
+          error: 'Circle API service not available'
+        }
+      });
+    }
+
+    try {
+      // Mark transfer as processing
+      await transfer.markAsProcessing();
+
+      // Create Circle transaction
+      const circleResponse = await circleService.createTransaction({
+        senderWalletId: senderWalletInfo.walletId,
+        destinationAddress,
+        tokenId,
+        amount: amount.toString(),
+        feeLevel: 'MEDIUM' // Could be configurable per user
+      });
+
+      if (circleResponse.success) {
+        // Update transfer with Circle transaction details
+        transfer.circleTransactionId = circleResponse.transactionId;
+        transfer.circleTransactionStatus = 'pending';
+        await transfer.save();
+
+        // Mark transfer as completed (Circle will handle the actual blockchain transaction)
+        await transfer.markAsCompleted(
+          circleResponse.transactionId,
+          circleResponse.data?.transactionHash || null
+        );
+
+        logger.info('Transfer completed successfully', {
+          transferId: transfer._id,
+          circleTransactionId: circleResponse.transactionId,
+          userId: senderUser.uid,
+          recipient: destinationAddress,
+          amount,
+          token
+        });
+
+        // TODO: Send confirmation email to sender and recipient (if internal)
+        // await sendTransferConfirmationEmail(senderUser, recipientUser, transfer);
+
+        res.status(200).json({
+          success: true,
+          message: 'Transfer completed successfully',
+          data: {
+            transferId: transfer._id,
+            circleTransactionId: circleResponse.transactionId,
+            status: 'completed',
+            transactionHash: circleResponse.data?.transactionHash,
+            blockchain,
+            amount,
+            token
+          }
+        });
+
+      } else {
+        // Circle transaction failed
+        await transfer.markAsFailed(circleResponse.error);
+
+        logger.error('Circle transaction failed', {
+          transferId: transfer._id,
+          error: circleResponse.error,
+          userId: senderUser.uid
+        });
+
+        res.status(400).json({
+          success: false,
+          message: `Transfer failed: ${circleResponse.error}`,
+          data: {
+            transferId: transfer._id,
+            status: 'failed',
+            error: circleResponse.error
+          }
+        });
+      }
+
+    } catch (error) {
+      // Handle any unexpected errors during Circle API call
+      await transfer.markAsFailed(error.message);
+
+      logger.error('Unexpected error during transfer', {
+        transferId: transfer._id,
+        error: error.message,
+        userId: senderUser.uid,
+        stack: error.stack
+      });
+
+      res.status(500).json({
+        success: false,
+        message: 'Transfer failed due to an unexpected error',
+        data: {
+          transferId: transfer._id,
+          status: 'failed',
+          error: error.message
+        }
+      });
+    }
 
   } catch (error) {
     logger.error('Error creating transfer', { error: error.message, stack: error.stack });
@@ -353,15 +514,34 @@ const getUserTransfers = async (req, res) => {
 
     logger.info('User transfers requested', { userId: user.uid });
 
-    // TODO: Implement get user transfers logic
-    // 1. Query database for user's transfers
-    // 2. Apply pagination and filtering
-    // 3. Return transfer list
+    // Get user's transfers from database
+    const transfers = await Transfer.findByUserId(user.uid);
 
-    res.status(501).json({
-      success: false,
-      message: 'Get user transfers not yet implemented',
-      data: null
+    // Remove sensitive information before sending to client
+    const sanitizedTransfers = transfers.map(transfer => ({
+      id: transfer._id,
+      senderId: transfer.senderId,
+      recipient: transfer.recipient,
+      recipientType: transfer.recipientType,
+      amount: transfer.amount,
+      token: transfer.token,
+      memo: transfer.memo,
+      status: transfer.status,
+      blockchain: transfer.blockchain,
+      circleTransactionStatus: transfer.circleTransactionStatus,
+      transactionHash: transfer.transactionHash,
+      createdAt: transfer.createdAt,
+      completedAt: transfer.completedAt,
+      errorMessage: transfer.errorMessage
+    }));
+
+    res.status(200).json({
+      success: true,
+      message: 'User transfers retrieved successfully',
+      data: {
+        transfers: sanitizedTransfers,
+        total: sanitizedTransfers.length
+      }
     });
 
   } catch (error) {
@@ -404,15 +584,52 @@ const getTransferById = async (req, res) => {
 
     logger.info('Transfer details requested', { userId: user.uid, transferId: id });
 
-    // TODO: Implement get transfer by ID logic
-    // 1. Validate transfer ID
-    // 2. Check if user has access to this transfer
-    // 3. Return transfer details
+    // Find transfer by ID
+    const transfer = await Transfer.findById(id);
+    if (!transfer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Transfer not found',
+        data: null
+      });
+    }
 
-    res.status(501).json({
-      success: false,
-      message: 'Get transfer by ID not yet implemented',
-      data: null
+    // Check if user has access to this transfer (sender or recipient)
+    if (transfer.senderId !== user.uid && transfer.recipientUserId !== user.uid) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied to this transfer',
+        data: null
+      });
+    }
+
+    // Remove sensitive information before sending to client
+    const sanitizedTransfer = {
+      id: transfer._id,
+      senderId: transfer.senderId,
+      recipient: transfer.recipient,
+      recipientType: transfer.recipientType,
+      amount: transfer.amount,
+      token: transfer.token,
+      memo: transfer.memo,
+      status: transfer.status,
+      blockchain: transfer.blockchain,
+      circleTransactionId: transfer.circleTransactionId,
+      circleTransactionStatus: transfer.circleTransactionStatus,
+      transactionHash: transfer.transactionHash,
+      gasUsed: transfer.gasUsed,
+      gasPrice: transfer.gasPrice,
+      feeAmount: transfer.feeAmount,
+      createdAt: transfer.createdAt,
+      updatedAt: transfer.updatedAt,
+      completedAt: transfer.completedAt,
+      errorMessage: transfer.errorMessage
+    };
+
+    res.status(200).json({
+      success: true,
+      message: 'Transfer details retrieved successfully',
+      data: sanitizedTransfer
     });
 
   } catch (error) {
@@ -455,15 +672,70 @@ const getTransferStatus = async (req, res) => {
 
     logger.info('Transfer status requested', { userId: user.uid, transferId: id });
 
-    // TODO: Implement get transfer status logic
-    // 1. Validate transfer ID
-    // 2. Check if user has access to this transfer
-    // 3. Return current transfer status
+    // Find transfer by ID
+    const transfer = await Transfer.findById(id);
+    if (!transfer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Transfer not found',
+        data: null
+      });
+    }
 
-    res.status(501).json({
-      success: false,
-      message: 'Get transfer status not yet implemented',
-      data: null
+    // Check if user has access to this transfer (sender or recipient)
+    if (transfer.senderId !== user.uid && transfer.recipientUserId !== user.uid) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied to this transfer',
+        data: null
+      });
+    }
+
+    // If transfer has a Circle transaction ID, get latest status from Circle API
+    let circleStatus = null;
+    if (transfer.circleTransactionId && circleService.isAvailable()) {
+      try {
+        const circleResponse = await circleService.getTransactionStatus(transfer.circleTransactionId);
+        if (circleResponse.success) {
+          circleStatus = circleResponse.data;
+
+          // Update local transfer status if Circle status has changed
+          if (circleResponse.status !== transfer.circleTransactionStatus) {
+            await transfer.updateCircleStatus(circleResponse.status);
+          }
+        }
+      } catch (error) {
+        logger.warn('Failed to get Circle transaction status', {
+          transferId: id,
+          circleTransactionId: transfer.circleTransactionId,
+          error: error.message
+        });
+      }
+    }
+
+    // Return transfer status
+    const statusData = {
+      id: transfer._id,
+      status: transfer.status,
+      blockchain: transfer.blockchain,
+      circleTransactionId: transfer.circleTransactionId,
+      circleTransactionStatus: transfer.circleTransactionStatus,
+      transactionHash: transfer.transactionHash,
+      createdAt: transfer.createdAt,
+      updatedAt: transfer.updatedAt,
+      completedAt: transfer.completedAt,
+      errorMessage: transfer.errorMessage
+    };
+
+    // Include Circle status if available
+    if (circleStatus) {
+      statusData.circleStatus = circleStatus;
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Transfer status retrieved successfully',
+      data: statusData
     });
 
   } catch (error) {

@@ -60,7 +60,7 @@ const validateTransfer = (req, res, next) => {
     }
 
     // Validate senderId format (email, UID, or wallet address)
-    const isValidSenderId = 
+    const isValidSenderId =
       /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(senderId) || // Email format
       /^[a-zA-Z0-9_-]{3,}$/.test(senderId) || // UID format (more flexible, min 3 chars)
       /^0x[a-fA-F0-9]{40}$/.test(senderId) || // Ethereum wallet address
@@ -78,10 +78,10 @@ const validateTransfer = (req, res, next) => {
 
     // Validate recipient format based on type
     let isValidRecipient = false;
-    
+
     if (recipientType === 'internal') {
       // For internal users, accept email, UID, or wallet address
-      isValidRecipient = 
+      isValidRecipient =
         /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient) || // Email format
         /^[a-zA-Z0-9_-]{3,}$/.test(recipient) || // UID format (more flexible, min 3 chars)
         /^0x[a-fA-F0-9]{40}$/.test(recipient) || // Ethereum wallet address
@@ -90,7 +90,7 @@ const validateTransfer = (req, res, next) => {
         recipient.length >= 3; // Accept any reasonable length string as fallback
     } else {
       // For external wallets, only accept valid wallet addresses
-      isValidRecipient = 
+      isValidRecipient =
         /^0x[a-fA-F0-9]{40}$/.test(recipient) || // Ethereum wallet address
         /^[a-zA-Z0-9]{26,35}$/.test(recipient) || // Bitcoin-style addresses
         /^[a-zA-Z0-9]{32,44}$/.test(recipient); // Other crypto addresses
@@ -99,7 +99,7 @@ const validateTransfer = (req, res, next) => {
     if (!isValidRecipient) {
       return res.status(400).json({
         success: false,
-        message: recipientType === 'internal' 
+        message: recipientType === 'internal'
           ? 'Invalid recipient format for internal user. Must be email, UID, or wallet address'
           : 'Invalid external wallet address format',
         data: null
@@ -189,7 +189,7 @@ const validateSecurityCodeRequest = (req, res, next) => {
     }
 
     // Validate senderId format (email, UID, or wallet address)
-    const isValidSenderId = 
+    const isValidSenderId =
       /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(senderId) || // Email format
       /^[a-zA-Z0-9_-]{3,}$/.test(senderId) || // UID format (more flexible, min 3 chars)
       /^0x[a-fA-F0-9]{40}$/.test(senderId) || // Ethereum wallet address
@@ -207,10 +207,10 @@ const validateSecurityCodeRequest = (req, res, next) => {
 
     // Validate recipient format based on type
     let isValidRecipient = false;
-    
+
     if (recipientType === 'internal') {
       // For internal users, accept email, UID, or wallet address
-      isValidRecipient = 
+      isValidRecipient =
         /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient) || // Email format
         /^[a-zA-Z0-9_-]{3,}$/.test(recipient) || // UID format (more flexible, min 3 chars)
         /^0x[a-fA-F0-9]{40}$/.test(recipient) || // Ethereum wallet address
@@ -219,7 +219,7 @@ const validateSecurityCodeRequest = (req, res, next) => {
         recipient.length >= 3; // Accept any reasonable length string as fallback
     } else {
       // For external wallets, only accept valid wallet addresses
-      isValidRecipient = 
+      isValidRecipient =
         /^0x[a-fA-F0-9]{40}$/.test(recipient) || // Ethereum wallet address
         /^[a-zA-Z0-9]{26,35}$/.test(recipient) || // Bitcoin-style addresses
         /^[a-zA-Z0-9]{32,44}$/.test(recipient); // Other crypto addresses
@@ -228,7 +228,7 @@ const validateSecurityCodeRequest = (req, res, next) => {
     if (!isValidRecipient) {
       return res.status(400).json({
         success: false,
-        message: recipientType === 'internal' 
+        message: recipientType === 'internal'
           ? 'Invalid recipient format for internal user. Must be email, UID, or wallet address'
           : 'Invalid external wallet address format',
         data: null
