@@ -4,8 +4,7 @@ const securityCodeSchema = new mongoose.Schema({
   // User identification
   userId: {
     type: String,
-    required: true,
-    index: true
+    required: true
   },
   
   // Transfer details
@@ -32,11 +31,8 @@ const securityCodeSchema = new mongoose.Schema({
   // Expiration and cooldown
   expiresAt: {
     type: Date,
-    required: true,
-    index: true
+    required: true
   },
-  
-
   
   // Transfer details for email
   recipient: {
@@ -57,8 +53,7 @@ const securityCodeSchema = new mongoose.Schema({
   // Timestamps
   createdAt: {
     type: Date,
-    default: Date.now,
-    index: true
+    default: Date.now
   },
   
   usedAt: {
@@ -68,7 +63,7 @@ const securityCodeSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Indexes for performance
+// Indexes for performance (explicitly defined to avoid duplicates)
 securityCodeSchema.index({ userId: 1, createdAt: -1 });
 securityCodeSchema.index({ transferId: 1 }, { unique: true });
 securityCodeSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 }); // TTL index
