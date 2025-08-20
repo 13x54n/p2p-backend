@@ -40,11 +40,7 @@ const sendSecurityCodeEmail = async (to, securityCode, recipient, amount, token)
       subject: 'Transfer Security Code - Ming HQ',
       html: `
         <div style="font-family: Arial, sans-serif; margin: 0 auto; background-color: #f8f9fa;">
-          <div style="background-color: #ffffff; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-            <div style="text-align: center; margin-bottom: 30px;">
-              <h1 style="color: #333; margin: 0; font-size: 24px;">🔐 Transfer Security Code</h1>
-            </div>
-            
+          <div style="background-color: #ffffff; padding: 10px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
             <div style="border-radius: 8px; margin-bottom: 25px;">
               <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; font-size: 14px;">
                 <div><strong>Recipient:</strong> ${recipient}</div>
